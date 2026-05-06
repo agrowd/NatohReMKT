@@ -5,26 +5,42 @@ import axios from 'axios';
 const API_URL = window.location.protocol + '//' + window.location.hostname + ':3001';
 const socket = io(API_URL);
 
-// --- ICONOS SVG (TODOS REVISADOS Y CON FRAGMENTOS) ---
+// --- ICONOS SVG (TODOS CON FRAGMENTOS) ---
 const Icon = ({ name, size = 24 }) => {
   const icons = {
     home: <><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></>,
     zap: <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>,
     connection: <><path d="M18 4l2 2-6 6M4 20l2-2 6-6M9 9l1.5 1.5M13.5 13.5L15 15M21 3l-2 2M3 21l2-2"/></>,
     history: <><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>,
-    trash: <><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2 2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></>,
+    trash: <><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></>,
     refresh: <><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></>,
     clip: <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>,
     edit: <><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></>,
     save: <><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></>,
     folder: <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>,
-    help: <><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></>
+    help: <><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></>,
+    eye: <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>,
+    magic: <path d="M15 4V2m0 12v-2M8 8H6m12 0h-2M13 13l-9 9m6-12l2 2m4 4l2 2"/>
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       {icons[name]}
     </svg>
   );
+};
+
+// Función local para probar spintax en el frente
+const resolveSpintaxLocal = (text) => {
+  if (!text) return "";
+  let loopCount = 0;
+  while (text.includes('{') && text.includes('}') && loopCount < 10) {
+    text = text.replace(/\{([^{}|]*\|[^{}]*)\}/g, (match, options) => {
+      const choices = options.split('|');
+      return choices[Math.floor(Math.random() * choices.length)];
+    });
+    loopCount++;
+  }
+  return text;
 };
 
 function App() {
@@ -37,6 +53,7 @@ function App() {
   const [activeCampaign, setActiveCampaign] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [expandedCampaign, setExpandedCampaign] = useState(null);
+  const [previews, setPreviews] = useState({});
 
   // PERSISTENCIA
   const [selectedLabels, setSelectedLabels] = useState(() => JSON.parse(localStorage.getItem('selectedLabels') || '[]'));
@@ -87,8 +104,17 @@ function App() {
     try { await axios.put(`${API_URL}/api/flows/${id}`, { name: newName }); fetchFlows(); } catch (e) {}
   };
 
-  const deleteFlow = async (id) => {
-    if (confirm("¿Borrar flujo?")) { await axios.delete(`${API_URL}/api/flows/${id}`); fetchFlows(); }
+  const addSpintaxHelper = (stepId) => {
+    const spintax = "{Hola|Buen día|Hola, ¿cómo estás?}";
+    setFlowSteps(flowSteps.map(s => s.id === stepId ? { ...s, content: spintax + " " + s.content } : s));
+  };
+
+  const togglePreview = (stepId, content) => {
+    if (previews[stepId]) {
+      setPreviews({ ...previews, [stepId]: null });
+    } else {
+      setPreviews({ ...previews, [stepId]: resolveSpintaxLocal(content) });
+    }
   };
 
   const startCampaign = async () => {
@@ -107,9 +133,9 @@ function App() {
         <div className="modal-overlay">
           <div className="glass-card modal-content" style={{ maxWidth: '400px', textAlign: 'center' }}>
             <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🚀</div>
-            <h2 style={{ marginBottom: '1rem' }}>¡En marcha!</h2>
-            <p style={{ opacity: 0.6, marginBottom: '2rem' }}>Campaña lanzada con éxito.</p>
-            <button className="btn btn-primary" style={{ width: '100%' }} onClick={() => setShowModal(false)}>CONTINUAR</button>
+            <h2>¡Campaña en marcha!</h2>
+            <p style={{ opacity: 0.6, marginBottom: '2rem' }}>El bot está enviando mensajes con variaciones aleatorias.</p>
+            <button className="btn btn-primary" style={{ width: '100%' }} onClick={() => setShowModal(false)}>LISTO</button>
           </div>
         </div>
       )}
@@ -132,8 +158,7 @@ function App() {
             {activeCampaign && (
               <div style={{ flex: 1, maxWidth: '350px', marginLeft: '2rem', background: 'rgba(0, 255, 136, 0.05)', padding: '0.8rem', borderRadius: '12px', border: '1px solid var(--primary)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', marginBottom: '4px' }}>
-                  <span style={{ fontWeight: 800 }}>⚡ ENVIANDO</span>
-                  <span>{activeCampaign.sentCount} / {activeCampaign.total}</span>
+                  <span style={{ fontWeight: 800 }}>⚡ ENVIANDO: {activeCampaign.sentCount}/{activeCampaign.total}</span>
                 </div>
                 <div style={{ height: '4px', background: 'rgba(0,0,0,0.2)', borderRadius: '10px', overflow: 'hidden' }}>
                   <div style={{ width: `${(activeCampaign.sentCount / activeCampaign.total) * 100}%`, height: '100%', background: 'var(--primary)', transition: '0.5s' }} />
@@ -155,7 +180,7 @@ function App() {
                       <span onClick={() => setFlowSteps(JSON.parse(f.steps))} style={{ cursor: 'pointer', flex: 1 }}>{f.name}</span>
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <span onClick={() => renameFlow(f.id, f.name)} style={{ opacity: 0.4, cursor: 'pointer' }}><Icon name="edit" size={14}/></span>
-                        <span onClick={() => deleteFlow(f.id)} style={{ opacity: 0.4, cursor: 'pointer' }}><Icon name="trash" size={14}/></span>
+                        <span onClick={() => { if(confirm("¿Borrar?")) axios.delete(`${API_URL}/api/flows/${f.id}`).then(fetchFlows) }} style={{ opacity: 0.4, cursor: 'pointer' }}><Icon name="trash" size={14}/></span>
                       </div>
                     </div>
                   ))}
@@ -172,7 +197,7 @@ function App() {
               </aside>
               <main className="workspace">
                 <div className="glass-card" style={{ marginBottom: '1.5rem' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
                     <div>
                       <label style={{ fontSize: '0.75rem', opacity: 0.5 }}>Delay Leads (Seg)</label>
                       <div style={{ display: 'flex', gap: '8px', marginTop: '0.5rem' }}>
@@ -189,6 +214,7 @@ function App() {
                     </div>
                   </div>
                 </div>
+
                 <div className="glass-card" style={{ marginBottom: '1.5rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
                     <h2 style={{ fontSize: '1.2rem' }}>Constructor</h2>
@@ -199,10 +225,33 @@ function App() {
                   </div>
                   {flowSteps.map((step, i) => (
                     <div key={step.id} className="flow-step">
-                      <textarea value={step.content} onChange={(e) => setFlowSteps(flowSteps.map(s => s.id === step.id ? { ...s, content: e.target.value } : s))} rows={3} placeholder="Mensaje..." />
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.8rem' }}>
+                        <span style={{ fontSize: '0.7rem', opacity: 0.5 }}>MENSAJE #{i+1}</span>
+                        <div style={{ display: 'flex', gap: '12px' }}>
+                          <span onClick={() => addSpintaxHelper(step.id)} style={{ cursor: 'pointer', opacity: 0.4 }} title="Sugerir Spintax"><Icon name="magic" size={16}/></span>
+                          <span onClick={() => togglePreview(step.id, step.content)} style={{ cursor: 'pointer', opacity: 0.4, color: previews[step.id] ? 'var(--primary)' : '#fff' }} title="Previsualizar aleatorio"><Icon name="eye" size={16}/></span>
+                          <span onClick={() => setFlowSteps(flowSteps.filter(s => s.id !== step.id))} style={{ cursor: 'pointer', opacity: 0.4 }}><Icon name="trash" size={16}/></span>
+                        </div>
+                      </div>
+                      
+                      {previews[step.id] ? (
+                        <div style={{ padding: '1rem', background: 'rgba(0, 255, 136, 0.05)', border: '1px dashed var(--primary)', borderRadius: '12px', marginBottom: '10px', color: 'var(--primary)', fontSize: '0.9rem' }}>
+                          <div style={{ fontSize: '0.6rem', opacity: 0.5, marginBottom: '5px' }}>VISTA PREVIA ALEATORIA:</div>
+                          {previews[step.id]}
+                        </div>
+                      ) : (
+                        <textarea value={step.content} onChange={(e) => setFlowSteps(flowSteps.map(s => s.id === step.id ? { ...s, content: e.target.value } : s))} rows={3} placeholder="Escribí aquí. Usá {Hola|Buen día}..." />
+                      )}
                     </div>
                   ))}
                   <button className="btn btn-primary" style={{ width: '100%', marginTop: '1rem', height: '55px' }} onClick={startCampaign}>🚀 LANZAR CAMPAÑA</button>
+                </div>
+
+                <div className="glass-card" style={{ background: 'rgba(255,255,255,0.01)', borderStyle: 'dashed' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', opacity: 0.5, fontSize: '0.8rem' }}>
+                    <Icon name="help" size={16} />
+                    <span><b>Truco:</b> Usá el icono del 👁️ para ver cómo varían tus mensajes antes de enviarlos.</span>
+                  </div>
                 </div>
               </main>
             </div>
@@ -211,26 +260,17 @@ function App() {
           {activeTab === 'history' && (
              <div className="workspace">
                 <div className="glass-card">
-                  <h2>Historial de Campañas</h2>
+                  <h2>Historial</h2>
                   {campaigns.map(c => (
                     <div key={c.id} style={{ marginBottom: '1rem', borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
-                      <div className="label-item" onClick={() => setExpandedCampaign(expandedCampaign === c.id ? null : c.id)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <div style={{ fontWeight: 700 }}>{c.flow_name}</div>
-                          <div style={{ fontSize: '0.7rem', opacity: 0.5 }}>{new Date(c.created_at).toLocaleString()}</div>
-                        </div>
-                        <div style={{ fontWeight: 800, color: 'var(--primary)' }}>{c.sent_count}/{c.total_count} ✅</div>
+                      <div className="label-item" onClick={() => setExpandedCampaign(expandedCampaign === c.id ? null : c.id)} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>{c.flow_name}</span>
+                        <span style={{ fontWeight: 800, color: 'var(--primary)' }}>{c.sent_count}/{c.total_count} ✅</span>
                       </div>
-                      
                       {expandedCampaign === c.id && (
-                        <div style={{ marginTop: '1.5rem', background: 'rgba(0,0,0,0.2)', padding: '1.5rem', borderRadius: '15px' }}>
-                          <h4 style={{ fontSize: '0.8rem', opacity: 0.5, marginBottom: '1rem' }}>MENSAJES ENVIADOS:</h4>
+                        <div style={{ marginTop: '1rem', background: 'rgba(0,0,0,0.2)', padding: '1rem', borderRadius: '10px' }}>
                           {JSON.parse(c.steps).map((s, idx) => (
-                            <div key={idx} style={{ background: 'var(--glass)', padding: '1rem', borderRadius: '12px', marginBottom: '10px', fontSize: '0.9rem' }}>
-                              <div style={{ fontSize: '0.7rem', opacity: 0.4, marginBottom: '5px' }}>PASO {idx+1}</div>
-                              {s.content}
-                              {s.mediaFilename && <div style={{ color: 'var(--primary)', marginTop: '8px', fontSize: '0.8rem' }}>📎 Archivo: {s.mediaFilename}</div>}
-                            </div>
+                            <div key={idx} style={{ background: 'var(--glass)', padding: '0.8rem', borderRadius: '8px', marginBottom: '8px', fontSize: '0.85rem' }}>{s.content}</div>
                           ))}
                         </div>
                       )}

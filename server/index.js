@@ -52,20 +52,16 @@ app.post('/api/whatsapp/logout', async (req, res) => {
 app.get('/api/flows', (req, res) => {
     res.json(db.prepare('SELECT * FROM flows ORDER BY created_at DESC').all());
 });
-
 app.post('/api/flows', (req, res) => {
     const { name, steps } = req.body;
     const info = db.prepare('INSERT INTO flows (name, steps) VALUES (?, ?)').run(name, JSON.stringify(steps));
     res.json({ id: info.lastInsertRowid });
 });
-
-// NUEVO: Endpoint para renombrar flujos
 app.put('/api/flows/:id', (req, res) => {
     const { name } = req.body;
     db.prepare('UPDATE flows SET name = ? WHERE id = ?').run(name, req.params.id);
     res.json({ success: true });
 });
-
 app.delete('/api/flows/:id', (req, res) => {
     db.prepare('DELETE FROM flows WHERE id = ?').run(req.params.id);
     res.json({ success: true });
@@ -113,6 +109,7 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
         try {
             for (const step of steps) {
                 if (step.type === 'message') {
+                    // RESOLVER SPINTAX PARA CADA ENVIO INDIVIDUAL
                     const resolvedContent = resolveSpintax(step.content);
                     await sendMessage(contact.id._serialized, resolvedContent, step.mediaPath);
                     const stepDelay = Math.floor(Math.random() * (config.maxStepDelay - config.minStepDelay + 1) + config.minStepDelay);
@@ -137,11 +134,18 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
     io.emit('campaign_finished', { campaignId });
 }
 
+// Función Spintax Robusta
 function resolveSpintax(text) {
-    return text.replace(/\{([^{}|]*\|[^{}]*)\}/g, (match, options) => {
-        const choices = options.split('|');
-        return choices[Math.floor(Math.random() * choices.length)];
-    });
+    if (!text) return "";
+    let loopCount = 0;
+    while (text.includes('{') && text.includes('}') && loopCount < 10) {
+        text = text.replace(/\{([^{}|]*\|[^{}]*)\}/g, (match, options) => {
+            const choices = options.split('|');
+            return choices[Math.floor(Math.random() * choices.length)];
+        });
+        loopCount++;
+    }
+    return text;
 }
 
 initWhatsApp(io);
