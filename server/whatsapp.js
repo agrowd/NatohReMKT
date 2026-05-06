@@ -1,4 +1,6 @@
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
+const fs = require('fs');
+const path = require('path');
 
 let client = null;
 let io = null;
@@ -26,23 +28,19 @@ const startClient = async () => {
     });
 
     client.on('ready', async () => {
-        console.log('--- CLIENT READY (SYNCING) ---');
+        console.log('--- CLIENT READY ---');
         io.emit('ready', true);
         
-        // Intentar cargar etiquetas con re-intentos (WhatsApp tarda en sincronizar)
         let attempts = 0;
         const fetchInterval = setInterval(async () => {
             attempts++;
             try {
                 const labels = await client.getLabels();
-                console.log(`Attempt ${attempts}: Found ${labels.length} labels`);
                 if (labels.length > 0 || attempts > 5) {
                     io.emit('labels', labels);
                     clearInterval(fetchInterval);
                 }
-            } catch (e) {
-                console.log(`Attempt ${attempts} failed: ${e.message}`);
-            }
+            } catch (e) { console.log("Label fetch attempt failed"); }
         }, 5000);
     });
 
@@ -68,15 +66,19 @@ const stopClient = async () => {
     }
 };
 
+const logout = async () => {
+    await stopClient();
+    const sessionPath = path.join(__dirname, 'sessions');
+    if (fs.existsSync(sessionPath)) {
+        fs.rmSync(sessionPath, { recursive: true, force: true });
+        console.log('--- SESSION FOLDER DELETED ---');
+    }
+    return { success: true };
+};
+
 const getLabels = async () => {
     if (!client) return [];
-    try {
-        const labels = await client.getLabels();
-        return labels;
-    } catch (e) {
-        console.error("Error manual getLabels:", e.message);
-        return [];
-    }
+    try { return await client.getLabels(); } catch (e) { return []; }
 };
 
 const getContactsByLabel = async (labelId) => {
@@ -95,4 +97,4 @@ const sendMessage = async (to, content, media = null) => {
     return await client.sendMessage(to, content);
 };
 
-module.exports = { initWhatsApp, startClient, stopClient, getLabels, getContactsByLabel, sendMessage };
+module.exports = { initWhatsApp, startClient, stopClient, logout, getLabels, getContactsByLabel, sendMessage };

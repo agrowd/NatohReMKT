@@ -5,7 +5,7 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const db = require('./database');
-const { initWhatsApp, startClient, stopClient, getLabels, getContactsByLabel, sendMessage } = require('./whatsapp');
+const { initWhatsApp, startClient, stopClient, logout, getLabels, getContactsByLabel, sendMessage } = require('./whatsapp');
 
 const app = express();
 const server = http.createServer(app);
@@ -27,7 +27,6 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// Ensure uploads dir exists
 const fs = require('fs');
 if (!fs.existsSync('./uploads')) fs.mkdirSync('./uploads');
 
@@ -40,21 +39,15 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
 
 // Bot Control
 app.post('/api/whatsapp/start', async (req, res) => {
-    try {
-        await startClient();
-        res.json({ message: 'Bot iniciado' });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    try { await startClient(); res.json({ message: 'Bot iniciado' }); } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/whatsapp/stop', async (req, res) => {
-    try {
-        await stopClient();
-        res.json({ message: 'Bot detenido' });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    try { await stopClient(); res.json({ message: 'Bot detenido' }); } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/whatsapp/logout', async (req, res) => {
+    try { const result = await logout(); res.json(result); } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // Flows
@@ -82,12 +75,7 @@ app.get('/api/labels', async (req, res) => {
 
 // Campaigns
 app.get('/api/campaigns', (req, res) => {
-    const campaigns = db.prepare(`
-        SELECT campaigns.*, flows.name as flow_name 
-        FROM campaigns 
-        JOIN flows ON campaigns.flow_id = flows.id 
-        ORDER BY campaigns.created_at DESC
-    `).all();
+    const campaigns = db.prepare(`SELECT campaigns.*, flows.name as flow_name FROM campaigns JOIN flows ON campaigns.flow_id = flows.id ORDER BY campaigns.created_at DESC`).all();
     res.json(campaigns);
 });
 
@@ -96,28 +84,19 @@ app.get('/api/campaigns/:id/logs', (req, res) => {
     res.json(logs);
 });
 
-// Start Campaign
 app.post('/api/campaigns', async (req, res) => {
     const { flowId, labelId } = req.body;
-    
     try {
         const flow = db.prepare('SELECT * FROM flows WHERE id = ?').get(flowId);
         const contacts = await getContactsByLabel(labelId);
-        
         const campaign = db.prepare('INSERT INTO campaigns (flow_id, label, total_count) VALUES (?, ?, ?)').run(flowId, labelId, contacts.length);
         const campaignId = campaign.lastInsertRowid;
-        
-        // Start sending process (async)
         startCampaignProcess(campaignId, contacts, JSON.parse(flow.steps));
-        
         res.json({ campaignId, contactCount: contacts.length });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// --- Helpers ---
-
+// Helpers
 function resolveSpintax(text) {
     const spintaxRegex = /\{([^{}|]*\|[^{}]*)\}/g;
     let result = text;
@@ -130,16 +109,11 @@ function resolveSpintax(text) {
     return result;
 }
 
-// --- Campaign Logic ---
-
 async function startCampaignProcess(campaignId, contacts, steps) {
     db.prepare('UPDATE campaigns SET status = ? WHERE id = ?').run('running', campaignId);
-    
     let sentCount = 0;
-    
     for (const contact of contacts) {
         try {
-            // Process each step in the flow
             for (const step of steps) {
                 if (step.type === 'message') {
                     const resolvedContent = resolveSpintax(step.content);
@@ -148,30 +122,20 @@ async function startCampaignProcess(campaignId, contacts, steps) {
                     await new Promise(resolve => setTimeout(resolve, step.duration * 1000));
                 }
             }
-            
             sentCount++;
             db.prepare('UPDATE campaigns SET sent_count = ? WHERE id = ?').run(sentCount, campaignId);
             db.prepare('INSERT INTO logs (campaign_id, contact_id, status) VALUES (?, ?, ?)').run(campaignId, contact.id._serialized, 'sent');
-            
             io.emit('campaign_progress', { campaignId, sentCount, total: contacts.length });
-            
-            // Random delay between contacts to avoid ban (5-15 seconds)
             await new Promise(resolve => setTimeout(resolve, (Math.random() * 10 + 5) * 1000));
-            
         } catch (err) {
             console.error(`Error sending to ${contact.id._serialized}:`, err);
             db.prepare('INSERT INTO logs (campaign_id, contact_id, status, message) VALUES (?, ?, ?, ?)').run(campaignId, contact.id._serialized, 'error', err.message);
         }
     }
-    
     db.prepare('UPDATE campaigns SET status = ? WHERE id = ?').run('completed', campaignId);
     io.emit('campaign_finished', { campaignId });
 }
 
-// Initialize WhatsApp
 initWhatsApp(io);
-
 const PORT = process.env.PORT || 3001;
-server.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on port ${PORT}`);
-});
+server.listen(PORT, '0.0.0.0', () => { console.log(`Server running on port ${PORT}`); });
