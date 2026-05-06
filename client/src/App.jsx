@@ -10,13 +10,12 @@ import {
   CheckCircle2, 
   Zap,
   Users,
-  LayoutDashboard,
-  History,
+  Layout,
+  Server,
   Info,
   X,
   Wifi,
-  WifiOff,
-  Database
+  WifiOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import QRCode from 'react-qr-code';
@@ -42,11 +41,13 @@ function App() {
 
   useEffect(() => {
     socket.on('qr', (data) => {
+      console.log('--- SOCKET QR RECEIVED ---');
       setQr(data);
       setStatus('waiting_qr');
     });
 
     socket.on('ready', () => {
+      console.log('--- SOCKET READY RECEIVED ---');
       setStatus('ready');
       setQr(null);
       fetchData();
@@ -79,21 +80,21 @@ function App() {
   const fetchLabels = async () => {
     try {
       const res = await axios.get(`${API_URL}/api/labels`);
-      setLabels(res.data);
+      setLabels(res.data || []);
     } catch (err) { console.error("Error labels:", err); }
   };
 
   const fetchFlows = async () => {
     try {
       const res = await axios.get(`${API_URL}/api/flows`);
-      setFlows(res.data);
+      setFlows(res.data || []);
     } catch (err) { console.error("Error flows:", err); }
   };
 
   const fetchCampaigns = async () => {
     try {
       const res = await axios.get(`${API_URL}/api/campaigns`);
-      setCampaigns(res.data);
+      setCampaigns(res.data || []);
     } catch (err) { console.error("Error campaigns:", err); }
   };
 
@@ -105,6 +106,10 @@ function App() {
       mediaUrl: null
     };
     setFlowSteps([...flowSteps, newStep]);
+  };
+
+  const updateStep = (id, field, value) => {
+    setFlowSteps(flowSteps.map(s => s.id === id ? { ...s, [field]: value } : s));
   };
 
   const startCampaign = async () => {
@@ -144,6 +149,7 @@ function App() {
           <div style={{ margin: '3rem 0', opacity: 0.5 }}>
             <div className="loader"></div>
             <p>Esperando señal del servidor...</p>
+            <p style={{ fontSize: '0.8rem', marginTop: '1rem' }}>Si tarda mucho, reiniciá el backend con PM2.</p>
           </div>
         )}
       </motion.div>
@@ -273,9 +279,9 @@ function App() {
     <div className="app-wrapper">
       <nav className="nav-sidebar">
         <div className="nav-item active" style={{ marginBottom: '2rem', border: 'none', background: 'none' }}><Zap size={32} color="var(--primary)" /></div>
-        <div className={`nav-item ${activeTab === 'builder' ? 'active' : ''}`} onClick={() => setActiveTab('builder')}><LayoutDashboard size={24} /></div>
-        <div className={`nav-item ${activeTab === 'flows' ? 'active' : ''}`} onClick={() => setActiveTab('flows')}><Database size={24} /></div>
-        <div className={`nav-item ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}><History size={24} /></div>
+        <div className={`nav-item ${activeTab === 'builder' ? 'active' : ''}`} onClick={() => setActiveTab('builder')}><Layout size={24} /></div>
+        <div className={`nav-item ${activeTab === 'flows' ? 'active' : ''}`} onClick={() => setActiveTab('flows')}><Server size={24} /></div>
+        <div className={`nav-item ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}><Clock size={24} /></div>
       </nav>
 
       <div className="main-layout">

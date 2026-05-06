@@ -1,18 +1,19 @@
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
 
 let client;
 let io;
 
 const initWhatsApp = (socketIo) => {
     io = socketIo;
+    console.log('--- INITIALIZING WHATSAPP CLIENT ---');
 
     client = new Client({
         authStrategy: new LocalAuth({
             dataPath: './sessions'
         }),
         puppeteer: {
-            headless: true,
+            headless: true, // Use 'true' for older versions or 'new' for latest
+            executablePath: process.env.CHROME_PATH || null, // Allow custom chrome path
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
@@ -20,60 +21,77 @@ const initWhatsApp = (socketIo) => {
                 '--disable-accelerated-2d-canvas',
                 '--no-first-run',
                 '--no-zygote',
-                '--single-process', // <- this one helps in some VPS
+                '--single-process',
                 '--disable-gpu'
             ],
         }
     });
 
     client.on('qr', (qr) => {
-        console.log('QR RECEIVED', qr);
-        // qrcode.generate(qr, { small: true }); // Log in terminal too
+        console.log('--- QR RECEIVED ---');
         io.emit('qr', qr);
     });
 
-    client.on('ready', async () => {
-        console.log('CLIENT READY');
-        io.emit('ready', { status: true });
-        
-        // Fetch labels on ready
-        try {
-            const labels = await client.getLabels();
-            io.emit('labels', labels);
-        } catch (err) {
-            console.error('Error fetching labels:', err);
-        }
+    client.on('loading_screen', (percent, message) => {
+        console.log('LOADING:', percent, message);
+        io.emit('loading', { percent, message });
     });
 
     client.on('authenticated', () => {
-        console.log('AUTHENTICATED');
+        console.log('--- AUTHENTICATED ---');
         io.emit('authenticated', true);
     });
 
     client.on('auth_failure', msg => {
-        console.error('AUTHENTICATION FAILURE', msg);
+        console.error('--- AUTH FAILURE ---', msg);
         io.emit('auth_failure', msg);
     });
 
+    client.on('ready', async () => {
+        console.log('--- CLIENT IS READY ---');
+        io.emit('ready', { status: true });
+        
+        try {
+            const labels = await client.getLabels();
+            console.log('Labels loaded:', labels.length);
+            io.emit('labels', labels);
+        } catch (err) {
+            console.error('Error fetching labels on ready:', err.message);
+        }
+    });
+
     client.on('disconnected', (reason) => {
-        console.log('Client was logged out', reason);
+        console.log('--- DISCONNECTED ---', reason);
         io.emit('disconnected', reason);
     });
 
-    client.initialize();
+    client.initialize().catch(err => {
+        console.error('--- INITIALIZATION ERROR ---', err);
+    });
 };
 
 const getClient = () => client;
 
 const getLabels = async () => {
-    if (!client) return [];
-    return await client.getLabels();
+    try {
+        if (!client) return [];
+        // Important: getLabels might fail if not ready
+        return await client.getLabels();
+    } catch (err) {
+        console.error('getLabels Error:', err.message);
+        return [];
+    }
 };
 
 const getContactsByLabel = async (labelId) => {
     if (!client) return [];
-    const label = await client.getLabelById(labelId);
-    return await label.getChats();
+    try {
+        const label = await client.getLabelById(labelId);
+        return await label.getChats();
+    } catch (err) {
+        console.error('getContactsByLabel Error:', err.message);
+        return [];
+    }
 };
 
 const sendMessage = async (to, content, media = null) => {

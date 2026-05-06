@@ -54,9 +54,10 @@ app.post('/api/flows', (req, res) => {
 app.get('/api/labels', async (req, res) => {
     try {
         const labels = await getLabels();
-        res.json(labels);
+        res.json(labels || []);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('Labels API Error:', err.message);
+        res.json([]);
     }
 });
 
