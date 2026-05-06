@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { io } from 'socket.io-client';
 import axios from 'axios';
 
@@ -15,7 +15,9 @@ const Icon = ({ name, size = 24 }) => {
     trash: <><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></>,
     refresh: <><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></>,
     clip: <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>,
-    help: <><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></>
+    help: <><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></>,
+    save: <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>,
+    folder: <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -30,7 +32,9 @@ function App() {
   const [labels, setLabels] = useState([]);
   const [activeTab, setActiveTab] = useState('builder');
   const [campaigns, setCampaigns] = useState([]);
+  const [savedFlows, setSavedFlows] = useState([]);
   const [activeCampaign, setActiveCampaign] = useState(null);
+  const [showModal, setShowModal] = useState(false);
 
   // PERSISTENCIA
   const [selectedLabels, setSelectedLabels] = useState(() => JSON.parse(localStorage.getItem('selectedLabels') || '[]'));
@@ -56,6 +60,7 @@ function App() {
     socket.on('campaign_progress', (data) => setActiveCampaign(data));
     socket.on('campaign_finished', () => { setActiveCampaign(null); fetchCampaigns(); });
     fetchCampaigns();
+    fetchFlows();
     return () => { socket.off('status'); socket.off('qr'); socket.off('ready'); socket.off('labels'); socket.off('campaign_progress'); socket.off('campaign_finished'); };
   }, []);
 
@@ -67,13 +72,33 @@ function App() {
     try { const res = await axios.get(`${API_URL}/api/campaigns`); setCampaigns(res.data || []); } catch (e) {}
   };
 
+  const fetchFlows = async () => {
+    try { const res = await axios.get(`${API_URL}/api/flows`); setSavedFlows(res.data || []); } catch (e) {}
+  };
+
+  const saveCurrentFlow = async () => {
+    const name = prompt("Nombre del flujo:");
+    if (!name) return;
+    try {
+      await axios.post(`${API_URL}/api/flows`, { name, steps: flowSteps });
+      fetchFlows();
+      alert("Flujo guardado con éxito");
+    } catch (e) { alert("Error al guardar"); }
+  };
+
+  const loadFlow = (flow) => {
+    if (confirm(`¿Cargar el flujo "${flow.name}"? Se reemplazará lo que tenés en el constructor.`)) {
+      setFlowSteps(JSON.parse(flow.steps));
+    }
+  };
+
   const handleFileUpload = async (stepId, file) => {
     const formData = new FormData();
     formData.append('file', file);
     try {
       const res = await axios.post(`${API_URL}/api/upload`, formData);
       setFlowSteps(flowSteps.map(s => s.id === stepId ? { ...s, mediaPath: res.data.url, mediaFilename: res.data.filename } : s));
-    } catch (e) { alert("Error al subir archivo"); }
+    } catch (e) { alert("Error al subir"); }
   };
 
   const startCampaign = async () => {
@@ -82,11 +107,24 @@ function App() {
     try {
       const flowRes = await axios.post(`${API_URL}/api/flows`, { name: `Camp. ${new Date().toLocaleTimeString()}`, steps: flowSteps });
       await axios.post(`${API_URL}/api/campaigns`, { flowId: flowRes.data.id, labelIds: selectedLabels, config });
+      setShowModal(true); // Mostrar el modal de éxito
     } catch (e) { alert("Error"); }
   };
 
   return (
     <div className="app-wrapper">
+      {/* MODAL DE CAMPAÑA INICIADA */}
+      {showModal && (
+        <div className="modal-overlay">
+          <div className="glass-card modal-content" style={{ maxWidth: '400px', textAlign: 'center' }}>
+            <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🚀</div>
+            <h2 style={{ marginBottom: '1rem' }}>¡Campaña Iniciada!</h2>
+            <p style={{ opacity: 0.6, marginBottom: '2rem' }}>El bot ha comenzado el proceso de envío con los delays configurados. Podés ver el progreso en la barra superior.</p>
+            <button className="btn btn-primary" style={{ width: '100%' }} onClick={() => setShowModal(false)}>ENTENDIDO</button>
+          </div>
+        </div>
+      )}
+
       <nav className="nav-sidebar">
         <div className="nav-item active" style={{ marginBottom: '2rem' }}><Icon name="zap" size={32} /></div>
         <div className={`nav-item ${activeTab === 'builder' ? 'active' : ''}`} onClick={() => setActiveTab('builder')} title="Constructor"><Icon name="home" /></div>
@@ -123,7 +161,19 @@ function App() {
           {activeTab === 'builder' && (
             <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', width: '100%', height: '100%' }}>
               <aside className="sub-sidebar">
-                <h3 style={{ fontSize: '0.7rem', opacity: 0.4, textTransform: 'uppercase', marginBottom: '1.5rem' }}>Etiquetas</h3>
+                <div style={{ marginBottom: '2.5rem' }}>
+                  <h3 style={{ fontSize: '0.7rem', opacity: 0.4, textTransform: 'uppercase', marginBottom: '1.2rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Icon name="folder" size={14} /> Flujos Guardados
+                  </h3>
+                  {savedFlows.slice(0, 5).map(f => (
+                    <div key={f.id} className="label-item" onClick={() => loadFlow(f)} style={{ fontSize: '0.85rem' }}>
+                      {f.name}
+                    </div>
+                  ))}
+                  {savedFlows.length === 0 && <p style={{ fontSize: '0.7rem', opacity: 0.3 }}>No hay flujos guardados.</p>}
+                </div>
+
+                <h3 style={{ fontSize: '0.7rem', opacity: 0.4, textTransform: 'uppercase', marginBottom: '1.2rem' }}>Etiquetas</h3>
                 {labels.map(l => (
                   <div key={l.id} className={`label-item ${selectedLabels.includes(l.id) ? 'active' : ''}`} onClick={() => setSelectedLabels(selectedLabels.includes(l.id) ? selectedLabels.filter(x => x !== l.id) : [...selectedLabels, l.id])}>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -134,7 +184,6 @@ function App() {
                 ))}
               </aside>
               <main className="workspace">
-                {/* Anti-Spam Config */}
                 <div className="glass-card" style={{ marginBottom: '1.5rem' }}>
                   <div style={{ display: 'flex', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
                     <div>
@@ -154,55 +203,42 @@ function App() {
                   </div>
                 </div>
 
-                {/* Message Builder */}
                 <div className="glass-card" style={{ marginBottom: '1.5rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                    <h2 style={{ margin: 0, fontSize: '1.2rem' }}>Constructor Multimedia</h2>
-                    <button className="btn" style={{ background: 'var(--glass)', color: '#fff' }} onClick={() => setFlowSteps([...flowSteps, { id: Date.now(), type: 'message', content: '', mediaPath: null }])}>+ Bloque</button>
+                    <h2 style={{ margin: 0, fontSize: '1.2rem' }}>Constructor</h2>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                       <button className="btn" style={{ background: 'var(--glass)', color: '#fff' }} onClick={saveCurrentFlow}><Icon name="save" size={16}/> Guardar</button>
+                       <button className="btn" style={{ background: 'var(--glass)', color: '#fff' }} onClick={() => setFlowSteps([...flowSteps, { id: Date.now(), type: 'message', content: '', mediaPath: null }])}>+ Bloque</button>
+                    </div>
                   </div>
                   {flowSteps.map((step, i) => (
                     <div key={step.id} className="flow-step">
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', opacity: 0.5, marginBottom: '0.8rem' }}>
                         <span>MENSAJE #{i+1}</span>
                         <div style={{ display: 'flex', gap: '10px' }}>
-                          <label style={{ cursor: 'pointer', color: step.mediaPath ? 'var(--primary)' : '#fff' }} title="Adjuntar Imagen/Video/Audio">
+                          <label style={{ cursor: 'pointer', color: step.mediaPath ? 'var(--primary)' : '#fff' }} title="Adjuntar Multimedia">
                              <Icon name="clip" size={16} />
                              <input type="file" style={{ display: 'none' }} onChange={(e) => handleFileUpload(step.id, e.target.files[0])} />
                           </label>
                           <span style={{ cursor: 'pointer' }} onClick={() => setFlowSteps(flowSteps.filter(s => s.id !== step.id))}><Icon name="trash" size={16}/></span>
                         </div>
                       </div>
-                      <textarea value={step.content} onChange={(e) => setFlowSteps(flowSteps.map(s => s.id === step.id ? { ...s, content: e.target.value } : s))} rows={3} placeholder="Escribí el texto aquí..." />
+                      <textarea value={step.content} onChange={(e) => setFlowSteps(flowSteps.map(s => s.id === step.id ? { ...s, content: e.target.value } : s))} rows={3} placeholder="Texto..." />
                       {step.mediaPath && (
                         <div style={{ marginTop: '10px', padding: '8px', background: 'rgba(0,255,136,0.05)', borderRadius: '8px', border: '1px dashed var(--primary)', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <Icon name="zap" size={12} style={{ color: 'var(--primary)' }} />
-                          <span style={{ color: 'var(--primary)' }}>Adjunto listo: {step.mediaFilename}</span>
+                          <span style={{ color: 'var(--primary)' }}>📎 Adjunto: {step.mediaFilename}</span>
                           <span style={{ marginLeft: 'auto', cursor: 'pointer' }} onClick={() => setFlowSteps(flowSteps.map(s => s.id === step.id ? { ...s, mediaPath: null, mediaFilename: null } : s))}>❌</span>
                         </div>
                       )}
                     </div>
                   ))}
-                  <button className="btn btn-primary" style={{ width: '100%', marginTop: '1rem', height: '55px' }} onClick={startCampaign}>🚀 LANZAR CAMPAÑA MULTIMEDIA</button>
+                  <button className="btn btn-primary" style={{ width: '100%', marginTop: '1rem', height: '55px' }} onClick={startCampaign}>🚀 LANZAR CAMPAÑA</button>
                 </div>
 
-                {/* Usage Help */}
                 <div className="glass-card" style={{ background: 'rgba(255,255,255,0.01)', borderStyle: 'dashed' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', marginBottom: '1rem', opacity: 0.6 }}>
-                    <Icon name="help" size={18} />
-                    <h3 style={{ margin: 0, fontSize: '0.9rem' }}>Tips de Uso y Spintax</h3>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', fontSize: '0.8rem', opacity: 0.5 }}>
-                    <div>
-                      <p style={{ fontWeight: 700, marginBottom: '5px', color: '#fff' }}>🔄 Variar Mensajes (Spintax)</p>
-                      <p>Usá llaves y barras para que el bot elija una opción al azar:</p>
-                      <code style={{ background: '#000', padding: '4px', borderRadius: '4px', display: 'block', marginTop: '5px' }}>
-                        {"{Hola|Buen día|Buenas}"} ¿cómo estás?
-                      </code>
-                    </div>
-                    <div>
-                      <p style={{ fontWeight: 700, marginBottom: '5px', color: '#fff' }}>📎 Multimedia</p>
-                      <p>Si adjuntás un archivo, el texto del bloque se enviará como "pie" (caption) de la imagen o video automáticamente.</p>
-                    </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', opacity: 0.5, fontSize: '0.8rem' }}>
+                    <Icon name="help" size={16} />
+                    <span><b>Spintax:</b> {"{Hola|Buen día}"} • <b>Multimedia:</b> El texto se enviará como pie de foto.</span>
                   </div>
                 </div>
               </main>
@@ -218,7 +254,6 @@ function App() {
                     <button className="btn" onClick={() => axios.post(`${API_URL}/api/whatsapp/start`)} style={{ background: 'var(--primary)', color: '#000', flex: 1, justifyContent: 'center' }}>ENCENDER</button>
                     <button className="btn" onClick={() => axios.post(`${API_URL}/api/whatsapp/stop`)} style={{ background: '#ff4444', color: '#fff', flex: 1, justifyContent: 'center' }}>APAGAR</button>
                   </div>
-                  <button className="btn" onClick={() => { if(confirm("¿Borrar sesión?")) axios.post(`${API_URL}/api/whatsapp/logout`) }} style={{ width: '100%', background: 'rgba(255,255,255,0.05)', color: '#fff', justifyContent: 'center', marginBottom: '2rem' }}>CERRAR SESIÓN</button>
                   {qr && <div style={{ background: '#fff', padding: '2rem', borderRadius: '30px', display: 'inline-block' }}><img src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qr)}`} alt="QR" /></div>}
                   {status === 'BOT ONLINE' && <div style={{ background: 'rgba(0, 255, 136, 0.1)', padding: '2rem', borderRadius: '24px', border: '1px solid var(--primary)' }}><h3 style={{ color: 'var(--primary)', margin: 0 }}>✅ BOT CONECTADO</h3></div>}
                 </div>
