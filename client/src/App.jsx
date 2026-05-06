@@ -5,7 +5,7 @@ import axios from 'axios';
 const API_URL = window.location.protocol + '//' + window.location.hostname + ':3001';
 const socket = io(API_URL);
 
-// --- ICONOS SVG ---
+// --- ICONOS SVG (TODOS CON FRAGMENTOS) ---
 const Icon = ({ name, size = 24 }) => {
   const icons = {
     home: <><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></>,
@@ -21,8 +21,9 @@ const Icon = ({ name, size = 24 }) => {
     help: <><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></>,
     eye: <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>,
     magic: <path d="M15 4V2m0 12v-2M8 8H6m12 0h-2M13 13l-9 9m6-12l2 2m4 4l2 2"/>,
-    lock: <><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></>,
-    user: <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+    lock: <><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></>,
+    user: <><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></>,
+    settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1-2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></>
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -31,7 +32,7 @@ const Icon = ({ name, size = 24 }) => {
   );
 };
 
-// Función Spintax Local para previsualización
+// Función Spintax Local
 const resolveSpintaxLocal = (text) => {
   if (!text) return "";
   let loopCount = 0;
@@ -59,7 +60,7 @@ function App() {
   const [expandedCampaign, setExpandedCampaign] = useState(null);
   const [previews, setPreviews] = useState({});
 
-  // ESTADO PERSISTENTE CAMPAÑA
+  // ESTADO PERSISTENTE
   const [selectedLabels, setSelectedLabels] = useState(() => JSON.parse(localStorage.getItem('selectedLabels') || '[]'));
   const [flowSteps, setFlowSteps] = useState(() => JSON.parse(localStorage.getItem('flowSteps') || '[{"id":1,"type":"message","content":"¡Hola! 🚀"}]'));
   const [config, setConfig] = useState(() => JSON.parse(localStorage.getItem('antiSpamConfig') || '{"minLeadDelay":30,"maxLeadDelay":90,"minStepDelay":5,"maxStepDelay":15}'));
@@ -244,7 +245,7 @@ function App() {
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.8rem' }}>
                         <span style={{ fontSize: '0.7rem', opacity: 0.5 }}>MENSAJE #{i+1}</span>
                         <div style={{ display: 'flex', gap: '10px' }}>
-                          <span onClick={() => togglePreview(step.id, step.content)} style={{ cursor: 'pointer', opacity: 0.4 }}><Icon name="eye" size={16}/></span>
+                          <span onClick={() => { const res = resolveSpintaxLocal(step.content); setPreviews({...previews, [step.id]: res}); }} style={{ cursor: 'pointer', opacity: 0.4 }}><Icon name="eye" size={16}/></span>
                           <span onClick={() => setFlowSteps(flowSteps.filter(s => s.id !== step.id))} style={{ cursor: 'pointer', opacity: 0.4 }}><Icon name="trash" size={16}/></span>
                         </div>
                       </div>
@@ -298,16 +299,9 @@ function App() {
              <div className="workspace">
                 <div className="glass-card" style={{ maxWidth: '500px' }}>
                   <Icon name="lock" size={48} style={{ color: 'var(--primary)', marginBottom: '1.5rem' }} />
-                  <h2>Seguridad del Sistema</h2>
-                  <p style={{ opacity: 0.5, marginBottom: '2.5rem' }}>Cambia tus credenciales de acceso para mayor seguridad.</p>
-                  
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                    <div style={{ background: 'rgba(255,255,255,0.05)', padding: '1.5rem', borderRadius: '15px', border: '1px solid var(--border)' }}>
-                      <div style={{ fontSize: '0.7rem', opacity: 0.5, marginBottom: '5px' }}>USUARIO ACTUAL:</div>
-                      <div style={{ fontSize: '1.1rem', fontWeight: 700 }}>{user.username}</div>
-                    </div>
-                    <button className="btn btn-primary" style={{ height: '55px', marginTop: '1rem' }} onClick={changeCredentials}>ACTUALIZAR CREDENCIALES</button>
-                  </div>
+                  <h2>Seguridad</h2>
+                  <p style={{ opacity: 0.5, marginBottom: '2.5rem' }}>Cambia tus credenciales de acceso.</p>
+                  <button className="btn btn-primary" style={{ height: '55px', width: '100%' }} onClick={changeCredentials}>ACTUALIZAR CREDENCIALES</button>
                 </div>
              </div>
           )}
