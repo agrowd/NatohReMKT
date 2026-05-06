@@ -5,7 +5,7 @@ import axios from 'axios';
 const API_URL = window.location.protocol + '//' + window.location.hostname + ':3001';
 const socket = io(API_URL);
 
-// --- ICONOS SVG PREMIUM (RESETEADOS Y BLINDADOS) ---
+// --- ICONOS SVG PREMIUM ---
 const Icon = ({ name, size = 20, color = "currentColor" }) => {
   const icons = {
     zap: <><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" fill="var(--primary)" stroke="none" /></>,
@@ -23,6 +23,20 @@ const Icon = ({ name, size = 20, color = "currentColor" }) => {
       {icons[name] || <circle cx="12" cy="12" r="5" />}
     </svg>
   );
+};
+
+// Función Spintax Local
+const resolveSpintaxLocal = (text) => {
+  if (!text) return "";
+  let loopCount = 0;
+  while (text.includes('{') && text.includes('}') && loopCount < 10) {
+    text = text.replace(/\{([^{}|]*\|[^{}]*)\}/g, (match, options) => {
+      const choices = options.split('|');
+      return choices[Math.floor(Math.random() * choices.length)];
+    });
+    loopCount++;
+  }
+  return text;
 };
 
 function App() {
@@ -43,7 +57,9 @@ function App() {
   const [activeCampaign, setActiveCampaign] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [expandedCampaign, setExpandedCampaign] = useState(null);
+  const [previews, setPreviews] = useState({});
 
+  // ESTADO PERSISTENTE
   const [selectedLabels, setSelectedLabels] = useState(() => {
     try { return JSON.parse(localStorage.getItem('selectedLabels') || '[]'); } catch(e) { return []; }
   });
@@ -96,6 +112,16 @@ function App() {
   };
 
   const handleLogout = () => { setUser(null); localStorage.removeItem('natoh_user'); };
+
+  const startCampaign = async () => {
+    if (status !== 'BOT ONLINE') return alert('Bot desconectado');
+    if (selectedLabels.length === 0) return alert('Seleccioná etiquetas');
+    try {
+      const flowRes = await axios.post(`${API_URL}/api/flows`, { name: `Camp. ${new Date().toLocaleTimeString()}`, steps: flowSteps });
+      await axios.post(`${API_URL}/api/campaigns`, { flowId: flowRes.data.id, labelIds: selectedLabels, config });
+      setShowModal(true);
+    } catch (e) { alert("Error al lanzar"); }
+  };
 
   if (!user) {
     return (
@@ -151,7 +177,10 @@ function App() {
               <aside className="sub-sidebar">
                 <h3 className="section-title">Flujos Guardados</h3>
                 {savedFlows.map(f => (
-                  <div key={f.id} className="label-item" onClick={() => setFlowSteps(JSON.parse(f.steps))}>{f.name}</div>
+                  <div key={f.id} className="label-item" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                     <span onClick={() => setFlowSteps(JSON.parse(f.steps))} style={{ cursor: 'pointer', flex: 1 }}>{f.name}</span>
+                     {user.role === 'admin' && <Icon name="trash" size={12} onClick={() => { if(confirm("¿Borrar?")) axios.delete(`${API_URL}/api/flows/${f.id}`).then(fetchFlows) }} style={{ opacity: 0.3 }} />}
+                  </div>
                 ))}
                 <h3 className="section-title" style={{ marginTop: '2rem' }}>Etiquetas WA</h3>
                 {labels.map(l => (
@@ -164,30 +193,43 @@ function App() {
                  <div className="glass-card" style={{ marginBottom: '1.5rem' }}>
                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
                     <div>
-                      <label className="input-label">Delay Leads (Seg)</label>
-                      <input type="number" value={config.minLeadDelay} onChange={(e) => setConfig({...config, minLeadDelay: parseInt(e.target.value)})} className="styled-input" />
+                      <label className="input-label">Delay Leads (Mín-Máx seg)</label>
+                      <div style={{ display: 'flex', gap: '10px', marginTop: '5px' }}>
+                        <input type="number" value={config.minLeadDelay} onChange={(e) => setConfig({...config, minLeadDelay: parseInt(e.target.value)})} className="styled-input" placeholder="Min" />
+                        <input type="number" value={config.maxLeadDelay} onChange={(e) => setConfig({...config, maxLeadDelay: parseInt(e.target.value)})} className="styled-input" placeholder="Max" />
+                      </div>
                     </div>
                     <div>
-                      <label className="input-label">Delay Pasos (Seg)</label>
-                      <input type="number" value={config.minStepDelay} onChange={(e) => setConfig({...config, minStepDelay: parseInt(e.target.value)})} className="styled-input" />
+                      <label className="input-label">Delay Pasos (Mín-Máx seg)</label>
+                      <div style={{ display: 'flex', gap: '10px', marginTop: '5px' }}>
+                        <input type="number" value={config.minStepDelay} onChange={(e) => setConfig({...config, minStepDelay: parseInt(e.target.value)})} className="styled-input" placeholder="Min" />
+                        <input type="number" value={config.maxStepDelay} onChange={(e) => setConfig({...config, maxStepDelay: parseInt(e.target.value)})} className="styled-input" placeholder="Max" />
+                      </div>
                     </div>
                   </div>
                 </div>
                 <div className="glass-card">
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
                     <h2 style={{ fontSize: '1.2rem' }}>Estrategia de Mensajes</h2>
-                    <button className="btn" style={{ background: 'var(--glass)', color: '#fff' }} onClick={() => setFlowSteps([...flowSteps, { id: Date.now(), type: 'message', content: '' }])}>+ Bloque</button>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                       <button className="btn" style={{ background: 'var(--glass)', color: '#fff' }} onClick={() => { const n = prompt("Nombre:"); if(n) axios.post(`${API_URL}/api/flows`, {name: n, steps: flowSteps}).then(fetchFlows) }}><Icon name="save" size={14}/> Guardar</button>
+                       <button className="btn" style={{ background: 'var(--glass)', color: '#fff' }} onClick={() => setFlowSteps([...flowSteps, { id: Date.now(), type: 'message', content: '' }])}>+ Bloque</button>
+                    </div>
                   </div>
                   {flowSteps.map((step, i) => (
                     <div key={step.id} className="flow-step">
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.8rem' }}>
                         <span style={{ fontSize: '0.7rem', opacity: 0.4 }}>PASO #{i+1}</span>
-                        <Icon name="trash" size={14} color="#ff4444" onClick={() => setFlowSteps(flowSteps.filter(s => s.id !== step.id))} />
+                        <div style={{ display: 'flex', gap: '12px' }}>
+                          <Icon name="eye" size={14} onClick={() => { const r = resolveSpintaxLocal(step.content); setPreviews({...previews, [step.id]: r}) }} />
+                          <Icon name="trash" size={14} color="#ff4444" onClick={() => setFlowSteps(flowSteps.filter(s => s.id !== step.id))} />
+                        </div>
                       </div>
                       <textarea value={step.content} onChange={(e) => setFlowSteps(flowSteps.map(s => s.id === step.id ? { ...s, content: e.target.value } : s))} rows={3} className="styled-textarea" placeholder="Escribí tu mensaje aquí..." />
+                      {previews[step.id] && <div style={{ marginTop: '8px', fontSize: '0.8rem', color: 'var(--primary)' }}>Previa: {previews[step.id]}</div>}
                     </div>
                   ))}
-                  <button className="btn btn-primary" style={{ width: '100%', height: '55px', marginTop: '1rem' }} onClick={() => setShowModal(true)}>🚀 LANZAR CAMPAÑA</button>
+                  <button className="btn btn-primary" style={{ width: '100%', height: '55px', marginTop: '1rem' }} onClick={startCampaign}>🚀 LANZAR CAMPAÑA</button>
                 </div>
               </main>
             </div>
@@ -204,6 +246,7 @@ function App() {
                   </div>
                   {qr && <div className="qr-container"><img src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qr)}`} alt="QR" /></div>}
                   {status === 'BOT ONLINE' && <div className="success-badge">✅ BOT CONECTADO CORRECTAMENTE</div>}
+                  <button className="btn" style={{ marginTop: '1rem', width: '100%', background: 'rgba(255,255,255,0.05)' }} onClick={() => { if(confirm("¿Cerrar sesión?")) axios.post(`${API_URL}/api/whatsapp/logout`).then(() => window.location.reload()) }}>CERRAR SESIÓN (LOGOUT)</button>
                 </div>
              </div>
           )}
@@ -221,6 +264,11 @@ function App() {
                         </div>
                         <div className="count-badge">{c.sent_count} / {c.total_count}</div>
                       </div>
+                      {expandedCampaign === c.id && (
+                        <div style={{ marginTop: '1rem', background: 'rgba(0,0,0,0.1)', padding: '1rem', borderRadius: '10px' }}>
+                          {JSON.parse(c.steps).map((s, idx) => <div key={idx} style={{ marginBottom: '8px', fontSize: '0.85rem', background: 'var(--glass)', padding: '10px', borderRadius: '8px' }}>{s.content}</div>)}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -231,8 +279,8 @@ function App() {
              <div className="workspace">
                 <div className="glass-card" style={{ maxWidth: '500px' }}>
                   <Icon name="settings" size={60} />
-                  <h2 style={{ margin: '1.5rem 0' }}>Configuración de Seguridad</h2>
-                  <p style={{ opacity: 0.5, marginBottom: '2rem' }}>Modificá tus credenciales de acceso al sistema.</p>
+                  <h2 style={{ margin: '1.5rem 0' }}>Configuración</h2>
+                  <p style={{ opacity: 0.5, marginBottom: '2rem' }}>Usuario actual: <b>{user.username}</b></p>
                   <button className="btn btn-primary" style={{ height: '55px', width: '100%' }} onClick={() => {
                     const nu = prompt("Nuevo Usuario:", user.username);
                     const np = prompt("Nueva Contraseña:");
