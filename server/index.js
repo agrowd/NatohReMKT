@@ -19,7 +19,6 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 let activeCampaign = null;
 
-// Multer Config
 const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, 'uploads/'),
     filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
@@ -31,7 +30,6 @@ if (!fs.existsSync('./uploads')) fs.mkdirSync('./uploads');
 
 app.post('/api/upload', upload.single('file'), (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No file' });
-    // Retornamos el path absoluto para que el motor de whatsapp lo encuentre facil
     const fullPath = path.join(__dirname, 'uploads', req.file.filename);
     res.json({ url: fullPath, filename: req.file.filename });
 });
@@ -54,10 +52,23 @@ app.post('/api/whatsapp/logout', async (req, res) => {
 app.get('/api/flows', (req, res) => {
     res.json(db.prepare('SELECT * FROM flows ORDER BY created_at DESC').all());
 });
+
 app.post('/api/flows', (req, res) => {
     const { name, steps } = req.body;
     const info = db.prepare('INSERT INTO flows (name, steps) VALUES (?, ?)').run(name, JSON.stringify(steps));
     res.json({ id: info.lastInsertRowid });
+});
+
+// NUEVO: Endpoint para renombrar flujos
+app.put('/api/flows/:id', (req, res) => {
+    const { name } = req.body;
+    db.prepare('UPDATE flows SET name = ? WHERE id = ?').run(name, req.params.id);
+    res.json({ success: true });
+});
+
+app.delete('/api/flows/:id', (req, res) => {
+    db.prepare('DELETE FROM flows WHERE id = ?').run(req.params.id);
+    res.json({ success: true });
 });
 
 // --- Labels ---
@@ -67,7 +78,12 @@ app.get('/api/labels', async (req, res) => {
 
 // --- Campaigns ---
 app.get('/api/campaigns', (req, res) => {
-    res.json(db.prepare(`SELECT campaigns.*, flows.name as flow_name FROM campaigns JOIN flows ON campaigns.flow_id = flows.id ORDER BY campaigns.created_at DESC`).all());
+    res.json(db.prepare(`
+        SELECT campaigns.*, flows.name as flow_name, flows.steps 
+        FROM campaigns 
+        JOIN flows ON campaigns.flow_id = flows.id 
+        ORDER BY campaigns.created_at DESC
+    `).all());
 });
 
 app.post('/api/campaigns', async (req, res) => {
