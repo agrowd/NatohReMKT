@@ -5,15 +5,15 @@ import axios from 'axios';
 const API_URL = window.location.protocol + '//' + window.location.hostname + ':3001';
 const socket = io(API_URL);
 
-// --- ICONOS SVG PREMIUM ---
+// --- ICONOS SVG PREMIUM (CORREGIDOS) ---
 const Icon = ({ name, size = 24 }) => {
   const icons = {
-    home: <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>,
+    home: <><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></>,
     zap: <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>,
-    connection: <path d="M18 4l2 2-6 6M4 20l2-2 6-6M9 9l1.5 1.5M13.5 13.5L15 15M21 3l-2 2M3 21l2-2"/>,
-    history: <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>,
-    trash: <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>,
-    refresh: <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+    connection: <><path d="M18 4l2 2-6 6M4 20l2-2 6-6M9 9l1.5 1.5M13.5 13.5L15 15M21 3l-2 2M3 21l2-2"/></>,
+    history: <><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>,
+    trash: <><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></>,
+    refresh: <><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></>
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -103,7 +103,7 @@ function App() {
 
         <div className="content-body">
           {activeTab === 'builder' && (
-            <>
+            <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', width: '100%' }}>
               <aside className="sub-sidebar">
                 <h3 style={{ fontSize: '0.75rem', opacity: 0.4, textTransform: 'uppercase', marginBottom: '1.5rem', letterSpacing: '1px' }}>Etiquetas Disponibles</h3>
                 {labels.map(l => (
@@ -143,7 +143,7 @@ function App() {
                   <button className="btn btn-primary" style={{ width: '100%', marginTop: '1.5rem', height: '65px', fontSize: '1.1rem' }} onClick={startCampaign}>🚀 LANZAR CAMPAÑA</button>
                 </div>
               </main>
-            </>
+            </div>
           )}
 
           {activeTab === 'connection' && (
