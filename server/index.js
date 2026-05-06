@@ -28,6 +28,24 @@ const upload = multer({ storage });
 const fs = require('fs');
 if (!fs.existsSync('./uploads')) fs.mkdirSync('./uploads');
 
+// --- Auth ---
+app.post('/api/login', (req, res) => {
+    const { username, password } = req.body;
+    const user = db.prepare('SELECT * FROM users WHERE username = ? AND password = ?').get(username, password);
+    if (user) {
+        res.json({ success: true, user: { id: user.id, username: user.username, role: user.role } });
+    } else {
+        res.status(401).json({ error: 'Credenciales inválidas' });
+    }
+});
+
+app.put('/api/users/update', (req, res) => {
+    const { id, username, password } = req.body;
+    db.prepare('UPDATE users SET username = ?, password = ? WHERE id = ?').run(username, password, id);
+    res.json({ success: true });
+});
+
+// --- Multimedia ---
 app.post('/api/upload', upload.single('file'), (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No file' });
     const fullPath = path.join(__dirname, 'uploads', req.file.filename);
@@ -109,7 +127,6 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
         try {
             for (const step of steps) {
                 if (step.type === 'message') {
-                    // RESOLVER SPINTAX PARA CADA ENVIO INDIVIDUAL
                     const resolvedContent = resolveSpintax(step.content);
                     await sendMessage(contact.id._serialized, resolvedContent, step.mediaPath);
                     const stepDelay = Math.floor(Math.random() * (config.maxStepDelay - config.minStepDelay + 1) + config.minStepDelay);
@@ -134,7 +151,6 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
     io.emit('campaign_finished', { campaignId });
 }
 
-// Función Spintax Robusta
 function resolveSpintax(text) {
     if (!text) return "";
     let loopCount = 0;
