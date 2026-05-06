@@ -5,7 +5,7 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const db = require('./database');
-const { initWhatsApp, getLabels, getContactsByLabel, sendMessage } = require('./whatsapp');
+const { initWhatsApp, startClient, stopClient, getLabels, getContactsByLabel, sendMessage } = require('./whatsapp');
 
 const app = express();
 const server = http.createServer(app);
@@ -37,6 +37,25 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
 });
 
 // --- Routes ---
+
+// Bot Control
+app.post('/api/whatsapp/start', async (req, res) => {
+    try {
+        await startClient();
+        res.json({ message: 'Bot iniciado' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/whatsapp/stop', async (req, res) => {
+    try {
+        await stopClient();
+        res.json({ message: 'Bot detenido' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
 
 // Flows
 app.get('/api/flows', (req, res) => {

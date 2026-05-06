@@ -1,29 +1,26 @@
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
+const fs = require('fs');
 
-let client;
-let io;
+let client = null;
+let io = null;
 
 const initWhatsApp = (socketIo) => {
     io = socketIo;
-    console.log('--- INITIALIZING WHATSAPP CLIENT ---');
+    console.log('--- WHATSAPP MODULE READY (WAITING FOR START COMMAND) ---');
+};
 
+const startClient = async () => {
+    if (client) {
+        console.log('Client already exists, stopping first...');
+        await stopClient();
+    }
+
+    console.log('--- STARTING WHATSAPP CLIENT ---');
     client = new Client({
-        authStrategy: new LocalAuth({
-            dataPath: './sessions'
-        }),
+        authStrategy: new LocalAuth({ dataPath: './sessions' }),
         puppeteer: {
-            headless: true, // Use 'true' for older versions or 'new' for latest
-            executablePath: process.env.CHROME_PATH || null, // Allow custom chrome path
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-accelerated-2d-canvas',
-                '--no-first-run',
-                '--no-zygote',
-                '--single-process',
-                '--disable-gpu'
-            ],
+            headless: true,
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
         }
     });
 
@@ -32,55 +29,47 @@ const initWhatsApp = (socketIo) => {
         io.emit('qr', qr);
     });
 
-    client.on('loading_screen', (percent, message) => {
-        console.log('LOADING:', percent, message);
-        io.emit('loading', { percent, message });
-    });
-
-    client.on('authenticated', () => {
-        console.log('--- AUTHENTICATED ---');
-        io.emit('authenticated', true);
-    });
-
-    client.on('auth_failure', msg => {
-        console.error('--- AUTH FAILURE ---', msg);
-        io.emit('auth_failure', msg);
-    });
-
     client.on('ready', async () => {
-        console.log('--- CLIENT IS READY ---');
-        io.emit('ready', { status: true });
-        
+        console.log('--- READY ---');
+        io.emit('ready', true);
         try {
             const labels = await client.getLabels();
-            console.log('Labels loaded:', labels.length);
             io.emit('labels', labels);
-        } catch (err) {
-            console.error('Error fetching labels on ready:', err.message);
+        } catch (e) {}
+    });
+
+    client.on('disconnected', () => {
+        console.log('--- DISCONNECTED ---');
+        io.emit('disconnected');
+        client = null;
+    });
+
+    try {
+        await client.initialize();
+    } catch (err) {
+        console.error('Init Error:', err);
+        io.emit('error', err.message);
+    }
+};
+
+const stopClient = async () => {
+    if (client) {
+        try {
+            await client.destroy();
+            console.log('--- CLIENT STOPPED ---');
+        } catch (e) {
+            console.error('Stop Error:', e);
         }
-    });
-
-    client.on('disconnected', (reason) => {
-        console.log('--- DISCONNECTED ---', reason);
-        io.emit('disconnected', reason);
-    });
-
-    client.initialize().catch(err => {
-        console.error('--- INITIALIZATION ERROR ---', err);
-    });
+        client = null;
+        io.emit('disconnected');
+    }
 };
 
 const getClient = () => client;
 
 const getLabels = async () => {
-    try {
-        if (!client) return [];
-        // Important: getLabels might fail if not ready
-        return await client.getLabels();
-    } catch (err) {
-        console.error('getLabels Error:', err.message);
-        return [];
-    }
+    if (!client) return [];
+    try { return await client.getLabels(); } catch (e) { return []; }
 };
 
 const getContactsByLabel = async (labelId) => {
@@ -88,28 +77,15 @@ const getContactsByLabel = async (labelId) => {
     try {
         const label = await client.getLabelById(labelId);
         return await label.getChats();
-    } catch (err) {
-        console.error('getContactsByLabel Error:', err.message);
-        return [];
-    }
+    } catch (e) { return []; }
 };
 
 const sendMessage = async (to, content, media = null) => {
-    if (!client) throw new Error('Client not initialized');
-    
+    if (!client) throw new Error('Bot apagado');
     if (media) {
-        // media should be a MessageMedia instance or base64 data
-        const messageMedia = typeof media === 'string' ? MessageMedia.fromFilePath(media) : media;
-        return await client.sendMessage(to, messageMedia, { caption: content });
+        return await client.sendMessage(to, MessageMedia.fromFilePath(media), { caption: content });
     }
-    
     return await client.sendMessage(to, content);
 };
 
-module.exports = {
-    initWhatsApp,
-    getClient,
-    getLabels,
-    getContactsByLabel,
-    sendMessage
-};
+module.exports = { initWhatsApp, startClient, stopClient, getClient, getLabels, getContactsByLabel, sendMessage };
