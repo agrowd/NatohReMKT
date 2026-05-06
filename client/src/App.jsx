@@ -14,7 +14,7 @@ const Icon = ({ name, size = 24 }) => {
     history: <><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>,
     trash: <><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></>,
     refresh: <><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></>,
-    settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></>
+    settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1-2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></>
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -31,14 +31,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('builder');
   const [flowSteps, setFlowSteps] = useState([{ id: 1, type: 'message', content: '¡Hola! Novedades 🚀' }]);
   const [campaigns, setCampaigns] = useState([]);
-  
-  // Configuración Anti-Spam
-  const [config, setConfig] = useState({
-    minLeadDelay: 30,
-    maxLeadDelay: 90,
-    minStepDelay: 5,
-    maxStepDelay: 15
-  });
+  const [config, setConfig] = useState({ minLeadDelay: 30, maxLeadDelay: 90, minStepDelay: 5, maxStepDelay: 15 });
 
   useEffect(() => {
     socket.on('qr', (data) => { setQr(data); setStatus('ESPERANDO ESCANEO'); });
@@ -50,25 +43,16 @@ function App() {
   }, []);
 
   const fetchLabels = async () => {
-    try {
-      const res = await axios.get(`${API_URL}/api/labels`);
-      if (res.data) setLabels(res.data);
-    } catch (e) {}
+    try { const res = await axios.get(`${API_URL}/api/labels`); if (res.data) setLabels(res.data); } catch (e) {}
   };
 
   const fetchCampaigns = async () => {
-    try {
-      const res = await axios.get(`${API_URL}/api/campaigns`);
-      setCampaigns(res.data || []);
-    } catch (e) {}
+    try { const res = await axios.get(`${API_URL}/api/campaigns`); setCampaigns(res.data || []); } catch (e) {}
   };
 
   const toggleLabel = (id) => {
-    if (selectedLabels.includes(id)) {
-      setSelectedLabels(selectedLabels.filter(l => l !== id));
-    } else {
-      setSelectedLabels([...selectedLabels, id]);
-    }
+    if (selectedLabels.includes(id)) { setSelectedLabels(selectedLabels.filter(l => l !== id)); }
+    else { setSelectedLabels([...selectedLabels, id]); }
   };
 
   const startCampaign = async () => {
@@ -77,7 +61,7 @@ function App() {
     try {
       const flowRes = await axios.post(`${API_URL}/api/flows`, { name: `Camp. ${new Date().toLocaleTimeString()}`, steps: flowSteps });
       await axios.post(`${API_URL}/api/campaigns`, { flowId: flowRes.data.id, labelIds: selectedLabels, config });
-      alert('¡Campaña iniciada con protección Anti-Spam!');
+      alert('¡Campaña iniciada!');
     } catch (e) { alert("Error"); }
   };
 
@@ -105,7 +89,7 @@ function App() {
           {activeTab === 'builder' && (
             <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', width: '100%' }}>
               <aside className="sub-sidebar">
-                <h3 style={{ fontSize: '0.75rem', opacity: 0.4, textTransform: 'uppercase', marginBottom: '1.5rem' }}>Seleccionar Etiquetas</h3>
+                <h3 style={{ fontSize: '0.75rem', opacity: 0.4, textTransform: 'uppercase', marginBottom: '1.5rem' }}>Etiquetas</h3>
                 {labels.map(l => (
                   <div key={l.id} className={`label-item ${selectedLabels.includes(l.id) ? 'active' : ''}`} onClick={() => toggleLabel(l.id)}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -119,7 +103,7 @@ function App() {
                 <div className="glass-card" style={{ marginBottom: '2rem' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
                     <Icon name="settings" size={20} style={{ color: 'var(--primary)' }} />
-                    <h3 style={{ margin: 0 }}>Protección Anti-Spam (Aleatoriedad)</h3>
+                    <h3 style={{ margin: 0 }}>Protección Anti-Spam (Aleatorio)</h3>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
                     <div>
@@ -130,7 +114,7 @@ function App() {
                       </div>
                     </div>
                     <div>
-                      <label style={{ fontSize: '0.8rem', opacity: 0.5 }}>Entre Mensajes del Flujo (segundos)</label>
+                      <label style={{ fontSize: '0.8rem', opacity: 0.5 }}>Entre Mensajes (segundos)</label>
                       <div style={{ display: 'flex', gap: '10px', marginTop: '0.5rem' }}>
                         <input type="number" value={config.minStepDelay} onChange={(e) => setConfig({...config, minStepDelay: parseInt(e.target.value)})} placeholder="Min" style={{ width: '100%', padding: '0.8rem', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: '10px', color: '#fff' }} />
                         <input type="number" value={config.maxStepDelay} onChange={(e) => setConfig({...config, maxStepDelay: parseInt(e.target.value)})} placeholder="Max" style={{ width: '100%', padding: '0.8rem', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: '10px', color: '#fff' }} />
@@ -142,9 +126,7 @@ function App() {
                 <div className="glass-card">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
                     <h2 style={{ margin: 0 }}>Constructor</h2>
-                    <div style={{ display: 'flex', gap: '10px' }}>
-                       <button className="btn" style={{ background: 'var(--glass)', color: '#fff' }} onClick={() => setFlowSteps([...flowSteps, { id: Date.now(), type: 'message', content: '' }])}>+ Texto</button>
-                    </div>
+                    <button className="btn" style={{ background: 'var(--glass)', color: '#fff' }} onClick={() => setFlowSteps([...flowSteps, { id: Date.now(), type: 'message', content: '' }])}>+ Mensaje</button>
                   </div>
                   {flowSteps.map((step, i) => (
                     <div key={step.id} className="flow-step">
@@ -155,10 +137,10 @@ function App() {
                       <textarea value={step.content} onChange={(e) => setFlowSteps(flowSteps.map(s => s.id === step.id ? { ...s, content: e.target.value } : s))} rows={3} />
                     </div>
                   ))}
-                  <button className="btn btn-primary" style={{ width: '100%', marginTop: '2rem', height: '60px' }} onClick={startCampaign}>🚀 LANZAR CAMPAÑA</button>
+                  <button className="btn btn-primary" style={{ width: '100%', marginTop: '2rem', height: '60px' }} onClick={startCampaign}>🚀 INICIAR</button>
                 </div>
               </main>
-            </>
+            </div>
           )}
 
           {activeTab === 'connection' && (
