@@ -17,6 +17,8 @@ app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+let activeCampaign = null;
+
 const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, 'uploads/'),
     filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
@@ -33,7 +35,7 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
 
 // --- Bot Control ---
 app.get('/api/whatsapp/status', (req, res) => {
-    res.json(getStatus());
+    res.json({ ...getStatus(), activeCampaign });
 });
 
 app.post('/api/whatsapp/start', async (req, res) => {
@@ -82,7 +84,10 @@ app.post('/api/campaigns', async (req, res) => {
         const campaign = db.prepare('INSERT INTO campaigns (flow_id, label, total_count) VALUES (?, ?, ?)')
             .run(flowId, labelIds.join(','), uniqueContacts.length);
         const campaignId = campaign.lastInsertRowid;
+        
+        activeCampaign = { campaignId, flowName: flow.name, sentCount: 0, total: uniqueContacts.length };
         startCampaignProcess(campaignId, uniqueContacts, JSON.parse(flow.steps), config);
+        
         res.json({ campaignId, contactCount: uniqueContacts.length });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -104,9 +109,10 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
                 }
             }
             sentCount++;
+            activeCampaign.sentCount = sentCount;
             db.prepare('UPDATE campaigns SET sent_count = ? WHERE id = ?').run(sentCount, campaignId);
             db.prepare('INSERT INTO logs (campaign_id, contact_id, status) VALUES (?, ?, ?)').run(campaignId, contact.id._serialized, 'sent');
-            io.emit('campaign_progress', { campaignId, sentCount, total: contacts.length });
+            io.emit('campaign_progress', activeCampaign);
             const leadDelay = Math.floor(Math.random() * (config.maxLeadDelay - config.minLeadDelay + 1) + config.minLeadDelay);
             await new Promise(r => setTimeout(r, leadDelay * 1000));
         } catch (err) {
@@ -114,6 +120,7 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
         }
     }
     db.prepare('UPDATE campaigns SET status = ? WHERE id = ?').run('completed', campaignId);
+    activeCampaign = null;
     io.emit('campaign_finished', { campaignId });
 }
 

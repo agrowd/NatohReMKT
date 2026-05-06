@@ -5,7 +5,7 @@ import axios from 'axios';
 const API_URL = window.location.protocol + '//' + window.location.hostname + ':3001';
 const socket = io(API_URL);
 
-// --- ICONOS SVG PREMIUM CON HOVER ---
+// --- ICONOS SVG ---
 const Icon = ({ name, size = 24 }) => {
   const icons = {
     home: <><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></>,
@@ -14,7 +14,7 @@ const Icon = ({ name, size = 24 }) => {
     history: <><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>,
     trash: <><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></>,
     refresh: <><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></>,
-    settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1-2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></>
+    settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></>
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -29,8 +29,9 @@ function App() {
   const [labels, setLabels] = useState([]);
   const [activeTab, setActiveTab] = useState('builder');
   const [campaigns, setCampaigns] = useState([]);
+  const [activeCampaign, setActiveCampaign] = useState(null);
 
-  // --- ESTADO PERSISTENTE ---
+  // ESTADO PERSISTENTE
   const [selectedLabels, setSelectedLabels] = useState(() => JSON.parse(localStorage.getItem('selectedLabels') || '[]'));
   const [flowSteps, setFlowSteps] = useState(() => JSON.parse(localStorage.getItem('flowSteps') || '[{"id":1,"type":"message","content":"¡Hola! 🚀"}]'));
   const [config, setConfig] = useState(() => JSON.parse(localStorage.getItem('antiSpamConfig') || '{"minLeadDelay":30,"maxLeadDelay":90,"minStepDelay":5,"maxStepDelay":15}'));
@@ -42,10 +43,10 @@ function App() {
   }, [selectedLabels, flowSteps, config]);
 
   useEffect(() => {
-    // Verificar estado inicial
     axios.get(`${API_URL}/api/whatsapp/status`).then(res => {
       setStatus(res.data.status);
       setQr(res.data.qr);
+      if (res.data.activeCampaign) setActiveCampaign(res.data.activeCampaign);
       if (res.data.status === 'BOT ONLINE') fetchLabels();
     });
 
@@ -53,10 +54,11 @@ function App() {
     socket.on('qr', (data) => { setQr(data); setStatus('ESPERANDO ESCANEO'); });
     socket.on('ready', () => { setStatus('BOT ONLINE'); setQr(null); fetchLabels(); });
     socket.on('labels', (data) => { setLabels(data || []); });
-    socket.on('disconnected', () => { setStatus('DESCONECTADO'); setLabels([]); });
+    socket.on('campaign_progress', (data) => setActiveCampaign(data));
+    socket.on('campaign_finished', () => { setActiveCampaign(null); fetchCampaigns(); });
 
     fetchCampaigns();
-    return () => { socket.off('status'); socket.off('qr'); socket.off('ready'); socket.off('labels'); socket.off('disconnected'); };
+    return () => { socket.off('status'); socket.off('qr'); socket.off('ready'); socket.off('labels'); socket.off('campaign_progress'); socket.off('campaign_finished'); };
   }, []);
 
   const fetchLabels = async () => {
@@ -73,7 +75,6 @@ function App() {
     try {
       const flowRes = await axios.post(`${API_URL}/api/flows`, { name: `Camp. ${new Date().toLocaleTimeString()}`, steps: flowSteps });
       await axios.post(`${API_URL}/api/campaigns`, { flowId: flowRes.data.id, labelIds: selectedLabels, config });
-      alert('¡Campaña iniciada!');
     } catch (e) { alert("Error"); }
   };
 
@@ -81,38 +82,39 @@ function App() {
     <div className="app-wrapper">
       <nav className="nav-sidebar">
         <div className="nav-item active" style={{ marginBottom: '2rem' }}><Icon name="zap" size={32} /></div>
-        
-        <div className={`nav-item ${activeTab === 'builder' ? 'active' : ''}`} onClick={() => setActiveTab('builder')}>
-          <div style={{ textAlign: 'center' }}>
-            <Icon name="home" />
-            <div style={{ fontSize: '0.6rem', marginTop: '4px' }}>INICIO</div>
-          </div>
+        <div className={`nav-item ${activeTab === 'builder' ? 'active' : ''}`} onClick={() => setActiveTab('builder')} title="Inicio">
+          <Icon name="home" />
         </div>
-
-        <div className={`nav-item ${activeTab === 'connection' ? 'active' : ''}`} onClick={() => setActiveTab('connection')}>
-          <div style={{ textAlign: 'center' }}>
-            <Icon name="connection" />
-            <div style={{ fontSize: '0.6rem', marginTop: '4px' }}>BOT</div>
-          </div>
+        <div className={`nav-item ${activeTab === 'connection' ? 'active' : ''}`} onClick={() => setActiveTab('connection')} title="Conexión">
+          <Icon name="connection" />
         </div>
-
-        <div className={`nav-item ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}>
-          <div style={{ textAlign: 'center' }}>
-            <Icon name="history" />
-            <div style={{ fontSize: '0.6rem', marginTop: '4px' }}>LOGS</div>
-          </div>
+        <div className={`nav-item ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')} title="Historial">
+          <Icon name="history" />
         </div>
       </nav>
 
       <div className="main-layout">
         <header className="top-bar">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', flex: 1 }}>
             <h1 style={{ fontSize: '1.4rem', fontWeight: 700, margin: 0 }}>NatohReMKT</h1>
             <div className="status-indicator">
               <div className={`dot ${status === 'BOT ONLINE' ? 'dot-ready' : 'dot-waiting'}`} />
               <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>{status}</span>
             </div>
+            
+            {activeCampaign && (
+              <div style={{ flex: 1, maxWidth: '400px', marginLeft: '2rem', background: 'rgba(255,255,255,0.05)', padding: '0.8rem 1.2rem', borderRadius: '15px', border: '1px solid var(--primary)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', marginBottom: '5px' }}>
+                  <span style={{ color: 'var(--primary)', fontWeight: 800 }}>⚡ ENVIANDO CAMPAÑA</span>
+                  <span>{activeCampaign.sentCount} / {activeCampaign.total}</span>
+                </div>
+                <div style={{ height: '6px', background: 'rgba(0,0,0,0.3)', borderRadius: '10px', overflow: 'hidden' }}>
+                  <div style={{ width: `${(activeCampaign.sentCount / activeCampaign.total) * 100}%`, height: '100%', background: 'var(--primary)', transition: '0.5s' }} />
+                </div>
+              </div>
+            )}
           </div>
+          
           <div style={{ display: 'flex', gap: '10px' }}>
             {status === 'BOT ONLINE' && <button className="btn" onClick={fetchLabels} style={{ background: 'var(--glass)', color: '#fff' }}><Icon name="refresh" size={16}/> Etiquetas</button>}
           </div>
@@ -122,7 +124,7 @@ function App() {
           {activeTab === 'builder' && (
             <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', width: '100%', height: '100%' }}>
               <aside className="sub-sidebar">
-                <h3 style={{ fontSize: '0.7rem', opacity: 0.4, textTransform: 'uppercase', marginBottom: '1.5rem' }}>Etiquetas Disponibles</h3>
+                <h3 style={{ fontSize: '0.7rem', opacity: 0.4, textTransform: 'uppercase', marginBottom: '1.5rem' }}>Etiquetas</h3>
                 {labels.map(l => (
                   <div key={l.id} className={`label-item ${selectedLabels.includes(l.id) ? 'active' : ''}`} 
                        onClick={() => setSelectedLabels(selectedLabels.includes(l.id) ? selectedLabels.filter(x => x !== l.id) : [...selectedLabels, l.id])}>
@@ -132,7 +134,6 @@ function App() {
                     </div>
                   </div>
                 ))}
-                {labels.length === 0 && <p style={{ fontSize: '0.8rem', opacity: 0.4, textAlign: 'center' }}>Conectá el bot para ver etiquetas.</p>}
               </aside>
               <main className="workspace">
                 <div className="glass-card" style={{ marginBottom: '2rem' }}>
@@ -142,14 +143,14 @@ function App() {
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
                     <div>
-                      <label style={{ fontSize: '0.75rem', opacity: 0.5 }}>Pausa entre Leads (seg)</label>
+                      <label style={{ fontSize: '0.75rem', opacity: 0.5 }}>Delay entre Leads (Min - Max)</label>
                       <div style={{ display: 'flex', gap: '8px', marginTop: '0.5rem' }}>
                         <input type="number" value={config.minLeadDelay} onChange={(e) => setConfig({...config, minLeadDelay: parseInt(e.target.value)})} style={{ width: '100%', padding: '0.8rem', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border)', borderRadius: '12px', color: '#fff' }} />
                         <input type="number" value={config.maxLeadDelay} onChange={(e) => setConfig({...config, maxLeadDelay: parseInt(e.target.value)})} style={{ width: '100%', padding: '0.8rem', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border)', borderRadius: '12px', color: '#fff' }} />
                       </div>
                     </div>
                     <div>
-                      <label style={{ fontSize: '0.75rem', opacity: 0.5 }}>Pausa entre Mensajes (seg)</label>
+                      <label style={{ fontSize: '0.75rem', opacity: 0.5 }}>Delay entre Mensajes (Min - Max)</label>
                       <div style={{ display: 'flex', gap: '8px', marginTop: '0.5rem' }}>
                         <input type="number" value={config.minStepDelay} onChange={(e) => setConfig({...config, minStepDelay: parseInt(e.target.value)})} style={{ width: '100%', padding: '0.8rem', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border)', borderRadius: '12px', color: '#fff' }} />
                         <input type="number" value={config.maxStepDelay} onChange={(e) => setConfig({...config, maxStepDelay: parseInt(e.target.value)})} style={{ width: '100%', padding: '0.8rem', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border)', borderRadius: '12px', color: '#fff' }} />
@@ -160,7 +161,7 @@ function App() {
 
                 <div className="glass-card">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-                    <h2 style={{ margin: 0, fontSize: '1.4rem' }}>Constructor de Mensajes</h2>
+                    <h2 style={{ margin: 0, fontSize: '1.4rem' }}>Constructor</h2>
                     <button className="btn" style={{ background: 'var(--glass)', color: '#fff' }} onClick={() => setFlowSteps([...flowSteps, { id: Date.now(), type: 'message', content: '' }])}>+ Bloque</button>
                   </div>
                   {flowSteps.map((step, i) => (
@@ -183,36 +184,13 @@ function App() {
                 <div className="glass-card" style={{ textAlign: 'center', maxWidth: '600px' }}>
                   <Icon name="connection" size={56} style={{ color: 'var(--primary)', marginBottom: '1.5rem' }} />
                   <h2 style={{ fontSize: '2rem' }}>Centro de Control</h2>
-                  <p style={{ opacity: 0.5, marginBottom: '2rem' }}>Gestioná el estado del Bot de WhatsApp</p>
-                  
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '2rem' }}>
-                    <button className="btn" onClick={() => axios.post(`${API_URL}/api/whatsapp/start`)} 
-                            style={{ background: status === 'DESCONECTADO' ? 'var(--primary)' : 'rgba(255,255,255,0.05)', color: status === 'DESCONECTADO' ? '#000' : '#fff', justifyContent: 'center', height: '60px' }}>
-                      ENCENDER BOT
-                    </button>
-                    <button className="btn" onClick={() => axios.post(`${API_URL}/api/whatsapp/stop`)} 
-                            style={{ background: '#ff4444', color: '#fff', justifyContent: 'center', height: '60px' }}>
-                      APAGAR BOT
-                    </button>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', margin: '2rem 0' }}>
+                    <button className="btn" onClick={() => axios.post(`${API_URL}/api/whatsapp/start`)} style={{ background: 'var(--primary)', color: '#000', justifyContent: 'center' }}>ENCENDER BOT</button>
+                    <button className="btn" onClick={() => axios.post(`${API_URL}/api/whatsapp/stop`)} style={{ background: '#ff4444', color: '#fff', justifyContent: 'center' }}>APAGAR BOT</button>
                   </div>
-
-                  <button className="btn" onClick={() => { if(confirm("Cerrar sesión borrará la vinculación. ¿Continuar?")) axios.post(`${API_URL}/api/whatsapp/logout`) }} 
-                          style={{ width: '100%', background: 'rgba(255,255,255,0.05)', color: '#fff', justifyContent: 'center', marginBottom: '2rem' }}>
-                    CERRAR SESIÓN (LOGOUT)
-                  </button>
-
-                  {qr && (
-                    <div style={{ background: '#fff', padding: '2rem', borderRadius: '30px', display: 'inline-block' }}>
-                      <p style={{ color: '#000', fontWeight: 800, marginBottom: '1rem' }}>ESCANEA EL CÓDIGO:</p>
-                      <img src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qr)}`} alt="QR" />
-                    </div>
-                  )}
-
-                  {status === 'BOT ONLINE' && (
-                    <div style={{ background: 'rgba(0, 255, 136, 0.1)', padding: '2rem', borderRadius: '24px', border: '1px solid var(--primary)' }}>
-                      <h3 style={{ color: 'var(--primary)', margin: 0 }}>✅ BOT CONECTADO</h3>
-                    </div>
-                  )}
+                  <button className="btn" onClick={() => { if(confirm("¿Logout?")) axios.post(`${API_URL}/api/whatsapp/logout`) }} style={{ width: '100%', background: 'rgba(255,255,255,0.05)', color: '#fff', justifyContent: 'center', marginBottom: '2rem' }}>CERRAR SESIÓN</button>
+                  {qr && <div style={{ background: '#fff', padding: '2rem', borderRadius: '30px', display: 'inline-block' }}><img src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qr)}`} alt="QR" /></div>}
+                  {status === 'BOT ONLINE' && <div style={{ background: 'rgba(0, 255, 136, 0.1)', padding: '2rem', borderRadius: '24px', border: '1px solid var(--primary)' }}><h3 style={{ color: 'var(--primary)', margin: 0 }}>✅ BOT CONECTADO</h3></div>}
                 </div>
              </div>
           )}
@@ -227,9 +205,7 @@ function App() {
                         <div style={{ fontWeight: 700 }}>{c.flow_name}</div>
                         <div style={{ fontSize: '0.7rem', opacity: 0.5 }}>{new Date(c.created_at).toLocaleString()}</div>
                       </div>
-                      <div style={{ fontWeight: 800, background: 'rgba(0,255,136,0.1)', padding: '0.5rem 1rem', borderRadius: '10px', color: 'var(--primary)' }}>
-                        {c.sent_count}/{c.total_count} ✅
-                      </div>
+                      <div style={{ fontWeight: 800, color: 'var(--primary)' }}>{c.sent_count}/{c.total_count} ✅</div>
                     </div>
                   ))}
                 </div>
