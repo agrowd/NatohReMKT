@@ -18,7 +18,8 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import QRCode from 'react-qr-code';
 
-const socket = io('http://localhost:3001');
+const API_URL = window.location.protocol + '//' + window.location.hostname + ':3001';
+const socket = io(API_URL);
 
 function App() {
   const [qr, setQr] = useState(null);
@@ -68,21 +69,21 @@ function App() {
 
   const fetchLabels = async () => {
     try {
-      const res = await axios.get('http://localhost:3001/api/labels');
+      const res = await axios.get(`${API_URL}/api/labels`);
       setLabels(res.data);
     } catch (err) { console.error(err); }
   };
 
   const fetchFlows = async () => {
     try {
-      const res = await axios.get('http://localhost:3001/api/flows');
+      const res = await axios.get(`${API_URL}/api/flows`);
       setFlows(res.data);
     } catch (err) { console.error(err); }
   };
 
   const fetchCampaigns = async () => {
     try {
-      const res = await axios.get('http://localhost:3001/api/campaigns');
+      const res = await axios.get(`${API_URL}/api/campaigns`);
       setCampaigns(res.data);
     } catch (err) { console.error(err); }
   };
@@ -106,12 +107,12 @@ function App() {
     if (flowSteps.length === 0) return alert('Agregá al menos un paso al flujo');
 
     try {
-      const flowRes = await axios.post('http://localhost:3001/api/flows', {
+      const flowRes = await axios.post(`${API_URL}/api/flows`, {
         name: `Campaña ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`,
         steps: flowSteps
       });
 
-      await axios.post('http://localhost:3001/api/campaigns', {
+      await axios.post(`${API_URL}/api/campaigns`, {
         flowId: flowRes.data.id,
         labelId: selectedLabel.id
       });
@@ -124,7 +125,7 @@ function App() {
 
   const viewLogs = async (id) => {
     try {
-      const res = await axios.get(`http://localhost:3001/api/campaigns/${id}/logs`);
+      const res = await axios.get(`${API_URL}/api/campaigns/${id}/logs`);
       setSelectedLogs(res.data);
     } catch (err) { console.error(err); }
   };
@@ -209,8 +210,8 @@ function App() {
                     const file = e.target.files[0];
                     if (!file) return;
                     const fd = new FormData(); fd.append('file', file);
-                    const res = await axios.post('http://localhost:3001/api/upload', fd);
-                    updateStep(step.id, 'mediaUrl', `http://localhost:3001${res.data.url}`);
+                    const res = await axios.post(`${API_URL}/api/upload`, fd);
+                    updateStep(step.id, 'mediaUrl', `${API_URL}${res.data.url}`);
                   }} style={{ fontSize: '0.7rem', marginTop: '0.5rem' }} />
                   {step.mediaUrl && <div style={{ fontSize: '0.7rem', color: 'var(--primary)' }}>Media OK</div>}
                 </>
