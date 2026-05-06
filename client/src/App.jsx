@@ -5,7 +5,7 @@ import axios from 'axios';
 const API_URL = window.location.protocol + '//' + window.location.hostname + ':3001';
 const socket = io(API_URL);
 
-// --- ICONOS SVG ---
+// --- ICONOS SVG PREMIUM CON HOVER ---
 const Icon = ({ name, size = 24 }) => {
   const icons = {
     home: <><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></>,
@@ -24,35 +24,47 @@ const Icon = ({ name, size = 24 }) => {
 };
 
 function App() {
-  const [status, setStatus] = useState('DESCONECTADO');
+  const [status, setStatus] = useState('VERIFICANDO...');
   const [qr, setQr] = useState(null);
   const [labels, setLabels] = useState([]);
-  const [selectedLabels, setSelectedLabels] = useState([]);
   const [activeTab, setActiveTab] = useState('builder');
-  const [flowSteps, setFlowSteps] = useState([{ id: 1, type: 'message', content: '¡Hola! Novedades 🚀' }]);
   const [campaigns, setCampaigns] = useState([]);
-  const [config, setConfig] = useState({ minLeadDelay: 30, maxLeadDelay: 90, minStepDelay: 5, maxStepDelay: 15 });
+
+  // --- ESTADO PERSISTENTE ---
+  const [selectedLabels, setSelectedLabels] = useState(() => JSON.parse(localStorage.getItem('selectedLabels') || '[]'));
+  const [flowSteps, setFlowSteps] = useState(() => JSON.parse(localStorage.getItem('flowSteps') || '[{"id":1,"type":"message","content":"¡Hola! 🚀"}]'));
+  const [config, setConfig] = useState(() => JSON.parse(localStorage.getItem('antiSpamConfig') || '{"minLeadDelay":30,"maxLeadDelay":90,"minStepDelay":5,"maxStepDelay":15}'));
 
   useEffect(() => {
+    localStorage.setItem('selectedLabels', JSON.stringify(selectedLabels));
+    localStorage.setItem('flowSteps', JSON.stringify(flowSteps));
+    localStorage.setItem('antiSpamConfig', JSON.stringify(config));
+  }, [selectedLabels, flowSteps, config]);
+
+  useEffect(() => {
+    // Verificar estado inicial
+    axios.get(`${API_URL}/api/whatsapp/status`).then(res => {
+      setStatus(res.data.status);
+      setQr(res.data.qr);
+      if (res.data.status === 'BOT ONLINE') fetchLabels();
+    });
+
+    socket.on('status', (s) => setStatus(s));
     socket.on('qr', (data) => { setQr(data); setStatus('ESPERANDO ESCANEO'); });
     socket.on('ready', () => { setStatus('BOT ONLINE'); setQr(null); fetchLabels(); });
     socket.on('labels', (data) => { setLabels(data || []); });
     socket.on('disconnected', () => { setStatus('DESCONECTADO'); setLabels([]); });
-    fetchLabels(); fetchCampaigns();
-    return () => { socket.off('qr'); socket.off('ready'); socket.off('labels'); socket.off('disconnected'); };
+
+    fetchCampaigns();
+    return () => { socket.off('status'); socket.off('qr'); socket.off('ready'); socket.off('labels'); socket.off('disconnected'); };
   }, []);
 
   const fetchLabels = async () => {
-    try { const res = await axios.get(`${API_URL}/api/labels`); if (res.data) setLabels(res.data); } catch (e) {}
+    try { const res = await axios.get(`${API_URL}/api/labels`); setLabels(res.data || []); } catch (e) {}
   };
 
   const fetchCampaigns = async () => {
     try { const res = await axios.get(`${API_URL}/api/campaigns`); setCampaigns(res.data || []); } catch (e) {}
-  };
-
-  const toggleLabel = (id) => {
-    if (selectedLabels.includes(id)) { setSelectedLabels(selectedLabels.filter(l => l !== id)); }
-    else { setSelectedLabels([...selectedLabels, id]); }
   };
 
   const startCampaign = async () => {
@@ -69,55 +81,78 @@ function App() {
     <div className="app-wrapper">
       <nav className="nav-sidebar">
         <div className="nav-item active" style={{ marginBottom: '2rem' }}><Icon name="zap" size={32} /></div>
-        <div className={`nav-item ${activeTab === 'builder' ? 'active' : ''}`} onClick={() => setActiveTab('builder')}><Icon name="home" /></div>
-        <div className={`nav-item ${activeTab === 'connection' ? 'active' : ''}`} onClick={() => setActiveTab('connection')}><Icon name="connection" /></div>
-        <div className={`nav-item ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}><Icon name="history" /></div>
+        
+        <div className={`nav-item ${activeTab === 'builder' ? 'active' : ''}`} onClick={() => setActiveTab('builder')}>
+          <div style={{ textAlign: 'center' }}>
+            <Icon name="home" />
+            <div style={{ fontSize: '0.6rem', marginTop: '4px' }}>INICIO</div>
+          </div>
+        </div>
+
+        <div className={`nav-item ${activeTab === 'connection' ? 'active' : ''}`} onClick={() => setActiveTab('connection')}>
+          <div style={{ textAlign: 'center' }}>
+            <Icon name="connection" />
+            <div style={{ fontSize: '0.6rem', marginTop: '4px' }}>BOT</div>
+          </div>
+        </div>
+
+        <div className={`nav-item ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}>
+          <div style={{ textAlign: 'center' }}>
+            <Icon name="history" />
+            <div style={{ fontSize: '0.6rem', marginTop: '4px' }}>LOGS</div>
+          </div>
+        </div>
       </nav>
 
       <div className="main-layout">
         <header className="top-bar">
           <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-            <h1 style={{ fontSize: '1.4rem', fontWeight: 700 }}>NatohReMKT</h1>
+            <h1 style={{ fontSize: '1.4rem', fontWeight: 700, margin: 0 }}>NatohReMKT</h1>
             <div className="status-indicator">
               <div className={`dot ${status === 'BOT ONLINE' ? 'dot-ready' : 'dot-waiting'}`} />
-              <span style={{ fontSize: '0.8rem' }}>{status}</span>
+              <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>{status}</span>
             </div>
+          </div>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            {status === 'BOT ONLINE' && <button className="btn" onClick={fetchLabels} style={{ background: 'var(--glass)', color: '#fff' }}><Icon name="refresh" size={16}/> Etiquetas</button>}
           </div>
         </header>
 
         <div className="content-body">
           {activeTab === 'builder' && (
-            <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', width: '100%' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', width: '100%', height: '100%' }}>
               <aside className="sub-sidebar">
-                <h3 style={{ fontSize: '0.75rem', opacity: 0.4, textTransform: 'uppercase', marginBottom: '1.5rem' }}>Etiquetas</h3>
+                <h3 style={{ fontSize: '0.7rem', opacity: 0.4, textTransform: 'uppercase', marginBottom: '1.5rem' }}>Etiquetas Disponibles</h3>
                 {labels.map(l => (
-                  <div key={l.id} className={`label-item ${selectedLabels.includes(l.id) ? 'active' : ''}`} onClick={() => toggleLabel(l.id)}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                       <div style={{ fontWeight: 600 }}>{l.name}</div>
+                  <div key={l.id} className={`label-item ${selectedLabels.includes(l.id) ? 'active' : ''}`} 
+                       onClick={() => setSelectedLabels(selectedLabels.includes(l.id) ? selectedLabels.filter(x => x !== l.id) : [...selectedLabels, l.id])}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                       <span style={{ fontWeight: 600 }}>{l.name}</span>
                        {selectedLabels.includes(l.id) && <span style={{ color: 'var(--primary)' }}>✓</span>}
                     </div>
                   </div>
                 ))}
+                {labels.length === 0 && <p style={{ fontSize: '0.8rem', opacity: 0.4, textAlign: 'center' }}>Conectá el bot para ver etiquetas.</p>}
               </aside>
               <main className="workspace">
                 <div className="glass-card" style={{ marginBottom: '2rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', marginBottom: '1.5rem' }}>
                     <Icon name="settings" size={20} style={{ color: 'var(--primary)' }} />
-                    <h3 style={{ margin: 0 }}>Protección Anti-Spam (Aleatorio)</h3>
+                    <h3 style={{ margin: 0, fontSize: '1rem' }}>Configuración Anti-Spam</h3>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
                     <div>
-                      <label style={{ fontSize: '0.8rem', opacity: 0.5 }}>Entre Personas (segundos)</label>
-                      <div style={{ display: 'flex', gap: '10px', marginTop: '0.5rem' }}>
-                        <input type="number" value={config.minLeadDelay} onChange={(e) => setConfig({...config, minLeadDelay: parseInt(e.target.value)})} placeholder="Min" style={{ width: '100%', padding: '0.8rem', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: '10px', color: '#fff' }} />
-                        <input type="number" value={config.maxLeadDelay} onChange={(e) => setConfig({...config, maxLeadDelay: parseInt(e.target.value)})} placeholder="Max" style={{ width: '100%', padding: '0.8rem', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: '10px', color: '#fff' }} />
+                      <label style={{ fontSize: '0.75rem', opacity: 0.5 }}>Pausa entre Leads (seg)</label>
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '0.5rem' }}>
+                        <input type="number" value={config.minLeadDelay} onChange={(e) => setConfig({...config, minLeadDelay: parseInt(e.target.value)})} style={{ width: '100%', padding: '0.8rem', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border)', borderRadius: '12px', color: '#fff' }} />
+                        <input type="number" value={config.maxLeadDelay} onChange={(e) => setConfig({...config, maxLeadDelay: parseInt(e.target.value)})} style={{ width: '100%', padding: '0.8rem', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border)', borderRadius: '12px', color: '#fff' }} />
                       </div>
                     </div>
                     <div>
-                      <label style={{ fontSize: '0.8rem', opacity: 0.5 }}>Entre Mensajes (segundos)</label>
-                      <div style={{ display: 'flex', gap: '10px', marginTop: '0.5rem' }}>
-                        <input type="number" value={config.minStepDelay} onChange={(e) => setConfig({...config, minStepDelay: parseInt(e.target.value)})} placeholder="Min" style={{ width: '100%', padding: '0.8rem', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: '10px', color: '#fff' }} />
-                        <input type="number" value={config.maxStepDelay} onChange={(e) => setConfig({...config, maxStepDelay: parseInt(e.target.value)})} placeholder="Max" style={{ width: '100%', padding: '0.8rem', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: '10px', color: '#fff' }} />
+                      <label style={{ fontSize: '0.75rem', opacity: 0.5 }}>Pausa entre Mensajes (seg)</label>
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '0.5rem' }}>
+                        <input type="number" value={config.minStepDelay} onChange={(e) => setConfig({...config, minStepDelay: parseInt(e.target.value)})} style={{ width: '100%', padding: '0.8rem', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border)', borderRadius: '12px', color: '#fff' }} />
+                        <input type="number" value={config.maxStepDelay} onChange={(e) => setConfig({...config, maxStepDelay: parseInt(e.target.value)})} style={{ width: '100%', padding: '0.8rem', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border)', borderRadius: '12px', color: '#fff' }} />
                       </div>
                     </div>
                   </div>
@@ -125,19 +160,19 @@ function App() {
 
                 <div className="glass-card">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-                    <h2 style={{ margin: 0 }}>Constructor</h2>
-                    <button className="btn" style={{ background: 'var(--glass)', color: '#fff' }} onClick={() => setFlowSteps([...flowSteps, { id: Date.now(), type: 'message', content: '' }])}>+ Mensaje</button>
+                    <h2 style={{ margin: 0, fontSize: '1.4rem' }}>Constructor de Mensajes</h2>
+                    <button className="btn" style={{ background: 'var(--glass)', color: '#fff' }} onClick={() => setFlowSteps([...flowSteps, { id: Date.now(), type: 'message', content: '' }])}>+ Bloque</button>
                   </div>
                   {flowSteps.map((step, i) => (
                     <div key={step.id} className="flow-step">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', opacity: 0.5 }}>
-                        <span>MENSAJE {i+1}</span>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', opacity: 0.5, marginBottom: '0.5rem' }}>
+                        <span>MENSAJE #{i+1}</span>
                         <span style={{ cursor: 'pointer' }} onClick={() => setFlowSteps(flowSteps.filter(s => s.id !== step.id))}><Icon name="trash" size={16}/></span>
                       </div>
-                      <textarea value={step.content} onChange={(e) => setFlowSteps(flowSteps.map(s => s.id === step.id ? { ...s, content: e.target.value } : s))} rows={3} />
+                      <textarea value={step.content} onChange={(e) => setFlowSteps(flowSteps.map(s => s.id === step.id ? { ...s, content: e.target.value } : s))} rows={3} placeholder="¡Hola! Te escribimos de..." />
                     </div>
                   ))}
-                  <button className="btn btn-primary" style={{ width: '100%', marginTop: '2rem', height: '60px' }} onClick={startCampaign}>🚀 INICIAR</button>
+                  <button className="btn btn-primary" style={{ width: '100%', marginTop: '2rem', height: '60px', fontSize: '1.1rem' }} onClick={startCampaign}>🚀 INICIAR CAMPAÑA</button>
                 </div>
               </main>
             </div>
@@ -145,14 +180,39 @@ function App() {
 
           {activeTab === 'connection' && (
              <div className="workspace">
-                <div className="glass-card" style={{ textAlign: 'center', maxWidth: '500px' }}>
-                  <Icon name="connection" size={48} style={{ color: '#00ff88', marginBottom: '1rem' }} />
-                  <h2>Conexión</h2>
-                  <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', margin: '2rem 0' }}>
-                    <button className="btn" onClick={() => axios.post(`${API_URL}/api/whatsapp/start`)} style={{ background: 'var(--primary)', color: '#000' }}>ENCENDER</button>
-                    <button className="btn" onClick={() => axios.post(`${API_URL}/api/whatsapp/logout`)} style={{ background: '#333', color: '#fff' }}>LOGOUT</button>
+                <div className="glass-card" style={{ textAlign: 'center', maxWidth: '600px' }}>
+                  <Icon name="connection" size={56} style={{ color: 'var(--primary)', marginBottom: '1.5rem' }} />
+                  <h2 style={{ fontSize: '2rem' }}>Centro de Control</h2>
+                  <p style={{ opacity: 0.5, marginBottom: '2rem' }}>Gestioná el estado del Bot de WhatsApp</p>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '2rem' }}>
+                    <button className="btn" onClick={() => axios.post(`${API_URL}/api/whatsapp/start`)} 
+                            style={{ background: status === 'DESCONECTADO' ? 'var(--primary)' : 'rgba(255,255,255,0.05)', color: status === 'DESCONECTADO' ? '#000' : '#fff', justifyContent: 'center', height: '60px' }}>
+                      ENCENDER BOT
+                    </button>
+                    <button className="btn" onClick={() => axios.post(`${API_URL}/api/whatsapp/stop`)} 
+                            style={{ background: '#ff4444', color: '#fff', justifyContent: 'center', height: '60px' }}>
+                      APAGAR BOT
+                    </button>
                   </div>
-                  {qr && <div className="qr-box"><img src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qr)}`} alt="QR" /></div>}
+
+                  <button className="btn" onClick={() => { if(confirm("Cerrar sesión borrará la vinculación. ¿Continuar?")) axios.post(`${API_URL}/api/whatsapp/logout`) }} 
+                          style={{ width: '100%', background: 'rgba(255,255,255,0.05)', color: '#fff', justifyContent: 'center', marginBottom: '2rem' }}>
+                    CERRAR SESIÓN (LOGOUT)
+                  </button>
+
+                  {qr && (
+                    <div style={{ background: '#fff', padding: '2rem', borderRadius: '30px', display: 'inline-block' }}>
+                      <p style={{ color: '#000', fontWeight: 800, marginBottom: '1rem' }}>ESCANEA EL CÓDIGO:</p>
+                      <img src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qr)}`} alt="QR" />
+                    </div>
+                  )}
+
+                  {status === 'BOT ONLINE' && (
+                    <div style={{ background: 'rgba(0, 255, 136, 0.1)', padding: '2rem', borderRadius: '24px', border: '1px solid var(--primary)' }}>
+                      <h3 style={{ color: 'var(--primary)', margin: 0 }}>✅ BOT CONECTADO</h3>
+                    </div>
+                  )}
                 </div>
              </div>
           )}
@@ -160,11 +220,16 @@ function App() {
           {activeTab === 'history' && (
              <div className="workspace">
                 <div className="glass-card">
-                  <h2>Historial</h2>
+                  <h2>Historial de Envíos</h2>
                   {campaigns.map(c => (
-                    <div key={c.id} className="label-item" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>{c.flow_name}</span>
-                      <span>{c.sent_count}/{c.total_count}</span>
+                    <div key={c.id} className="label-item" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontWeight: 700 }}>{c.flow_name}</div>
+                        <div style={{ fontSize: '0.7rem', opacity: 0.5 }}>{new Date(c.created_at).toLocaleString()}</div>
+                      </div>
+                      <div style={{ fontWeight: 800, background: 'rgba(0,255,136,0.1)', padding: '0.5rem 1rem', borderRadius: '10px', color: 'var(--primary)' }}>
+                        {c.sent_count}/{c.total_count} ✅
+                      </div>
                     </div>
                   ))}
                 </div>

@@ -5,7 +5,7 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const db = require('./database');
-const { initWhatsApp, startClient, stopClient, logout, getLabels, getContactsByLabel, sendMessage } = require('./whatsapp');
+const { initWhatsApp, startClient, stopClient, logout, getLabels, getContactsByLabel, sendMessage, getStatus } = require('./whatsapp');
 
 const app = express();
 const server = http.createServer(app);
@@ -32,20 +32,27 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
 });
 
 // --- Bot Control ---
+app.get('/api/whatsapp/status', (req, res) => {
+    res.json(getStatus());
+});
+
 app.post('/api/whatsapp/start', async (req, res) => {
     try { await startClient(); res.json({ message: 'Iniciado' }); } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
 app.post('/api/whatsapp/stop', async (req, res) => {
     try { await stopClient(); res.json({ message: 'Detenido' }); } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
 app.post('/api/whatsapp/logout', async (req, res) => {
-    try { const result = await logout(); res.json(result); } catch (err) { res.status(500).json({ error: err.message }); }
+    try { await logout(); res.json({ success: true }); } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // --- Flows ---
 app.get('/api/flows', (req, res) => {
     res.json(db.prepare('SELECT * FROM flows ORDER BY created_at DESC').all());
 });
+
 app.post('/api/flows', (req, res) => {
     const { name, steps } = req.body;
     const info = db.prepare('INSERT INTO flows (name, steps) VALUES (?, ?)').run(name, JSON.stringify(steps));
@@ -64,63 +71,45 @@ app.get('/api/campaigns', (req, res) => {
 
 app.post('/api/campaigns', async (req, res) => {
     const { flowId, labelIds, config } = req.body; 
-    // config: { minLeadDelay, maxLeadDelay, minStepDelay, maxStepDelay }
-
     try {
         const flow = db.prepare('SELECT * FROM flows WHERE id = ?').get(flowId);
         let allContacts = [];
-        
-        // Recorrer etiquetas una por una
         for (const labelId of labelIds) {
             const contacts = await getContactsByLabel(labelId);
             allContacts = [...allContacts, ...contacts];
         }
-
-        // Eliminar duplicados (si un contacto esta en dos etiquetas)
         const uniqueContacts = Array.from(new Map(allContacts.map(c => [c.id._serialized, c])).values());
-
         const campaign = db.prepare('INSERT INTO campaigns (flow_id, label, total_count) VALUES (?, ?, ?)')
             .run(flowId, labelIds.join(','), uniqueContacts.length);
-        
         const campaignId = campaign.lastInsertRowid;
-        
         startCampaignProcess(campaignId, uniqueContacts, JSON.parse(flow.steps), config);
-        
         res.json({ campaignId, contactCount: uniqueContacts.length });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// --- Campaign Logic Engine ---
+// --- Engine ---
 async function startCampaignProcess(campaignId, contacts, steps, config) {
     db.prepare('UPDATE campaigns SET status = ? WHERE id = ?').run('running', campaignId);
     let sentCount = 0;
-
     for (const contact of contacts) {
         try {
             for (const step of steps) {
                 if (step.type === 'message') {
                     const resolvedContent = resolveSpintax(step.content);
                     await sendMessage(contact.id._serialized, resolvedContent, step.mediaUrl);
-                    
-                    // Delay aleatorio entre mensajes del flujo
                     const stepDelay = Math.floor(Math.random() * (config.maxStepDelay - config.minStepDelay + 1) + config.minStepDelay);
                     await new Promise(r => setTimeout(r, stepDelay * 1000));
                 } else if (step.type === 'delay') {
                     await new Promise(r => setTimeout(r, step.duration * 1000));
                 }
             }
-
             sentCount++;
             db.prepare('UPDATE campaigns SET sent_count = ? WHERE id = ?').run(sentCount, campaignId);
             db.prepare('INSERT INTO logs (campaign_id, contact_id, status) VALUES (?, ?, ?)').run(campaignId, contact.id._serialized, 'sent');
             io.emit('campaign_progress', { campaignId, sentCount, total: contacts.length });
-
-            // Delay aleatorio entre Leads
             const leadDelay = Math.floor(Math.random() * (config.maxLeadDelay - config.minLeadDelay + 1) + config.minLeadDelay);
             await new Promise(r => setTimeout(r, leadDelay * 1000));
-
         } catch (err) {
-            console.error(`Error with ${contact.id._serialized}:`, err);
             db.prepare('INSERT INTO logs (campaign_id, contact_id, status, message) VALUES (?, ?, ?, ?)').run(campaignId, contact.id._serialized, 'error', err.message);
         }
     }
