@@ -5,28 +5,21 @@ import axios from 'axios';
 const API_URL = window.location.protocol + '//' + window.location.hostname + ':3001';
 const socket = io(API_URL);
 
-// --- ICONOS SVG (SIMPLIFICADOS PARA ESTABILIDAD) ---
-const Icon = ({ name, size = 24 }) => {
+// --- ICONOS SVG PREMIUM (RESETEADOS Y BLINDADOS) ---
+const Icon = ({ name, size = 20, color = "currentColor" }) => {
   const icons = {
-    home: <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />,
-    zap: <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />,
-    connection: <path d="M18 4l2 2-6 6M4 20l2-2 6-6" />,
-    history: <circle cx="12" cy="12" r="10" />,
-    trash: <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />,
-    refresh: <path d="M23 4v6h-6M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />,
-    clip: <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19" />,
-    edit: <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />,
-    save: <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />,
-    folder: <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />,
-    help: <circle cx="12" cy="12" r="10" />,
-    eye: <circle cx="12" cy="12" r="3" />,
-    magic: <path d="M15 4V2M13 13l-9 9" />,
-    lock: <rect x="3" y="11" width="18" height="11" rx="2" />,
-    user: <circle cx="12" cy="7" r="4" />,
-    settings: <circle cx="12" cy="12" r="3" />
+    zap: <><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" fill="var(--primary)" stroke="none" /></>,
+    home: <><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></>,
+    connection: <><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></>,
+    history: <><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></>,
+    settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1-2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" /></>,
+    logout: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></>,
+    trash: <><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></>,
+    eye: <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></>,
+    refresh: <><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></>
   };
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       {icons[name] || <circle cx="12" cy="12" r="5" />}
     </svg>
   );
@@ -74,7 +67,7 @@ function App() {
       setStatus(res.data.status); setQr(res.data.qr);
       if (res.data.activeCampaign) setActiveCampaign(res.data.activeCampaign);
       if (res.data.status === 'BOT ONLINE') fetchLabels();
-    }).catch(() => setStatus('ERROR DE CONEXIÓN'));
+    }).catch(() => setStatus('ERROR'));
 
     socket.on('status', (s) => setStatus(s));
     socket.on('qr', (data) => { setQr(data); setStatus('ESPERANDO ESCANEO'); });
@@ -83,9 +76,7 @@ function App() {
     socket.on('campaign_progress', (data) => setActiveCampaign(data));
     socket.on('campaign_finished', () => { setActiveCampaign(null); fetchCampaigns(); });
     
-    fetchCampaigns(); 
-    fetchFlows();
-    
+    fetchCampaigns(); fetchFlows();
     return () => { socket.off('status'); socket.off('qr'); socket.off('ready'); socket.off('labels'); socket.off('campaign_progress'); socket.off('campaign_finished'); };
   }, [user]);
 
@@ -101,7 +92,7 @@ function App() {
         setUser(res.data.user);
         localStorage.setItem('natoh_user', JSON.stringify(res.data.user));
       }
-    } catch (e) { alert("Credenciales incorrectas"); }
+    } catch (e) { alert("Error de acceso"); }
   };
 
   const handleLogout = () => { setUser(null); localStorage.removeItem('natoh_user'); };
@@ -109,9 +100,9 @@ function App() {
   if (!user) {
     return (
       <div className="app-wrapper" style={{ justifyContent: 'center', alignItems: 'center', display: 'flex' }}>
-        <div className="glass-card" style={{ maxWidth: '400px', width: '90%', textAlign: 'center' }}>
-          <div className="nav-item active" style={{ display: 'inline-flex', marginBottom: '2rem' }}><Icon name="zap" size={48} /></div>
-          <h2 style={{ fontSize: '1.8rem', marginBottom: '2rem' }}>NatohReMKT</h2>
+        <div className="glass-card" style={{ maxWidth: '400px', width: '90%', textAlign: 'center', padding: '3rem' }}>
+          <Icon name="zap" size={60} />
+          <h2 style={{ fontSize: '2rem', margin: '1.5rem 0 2rem 0', fontWeight: 800 }}>NatohReMKT</h2>
           <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             <input type="text" placeholder="Usuario" value={loginForm.username} onChange={(e) => setLoginForm({...loginForm, username: e.target.value})} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', padding: '1rem', borderRadius: '12px', color: '#fff' }} required />
             <input type="password" placeholder="Contraseña" value={loginForm.password} onChange={(e) => setLoginForm({...loginForm, password: e.target.value})} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', padding: '1rem', borderRadius: '12px', color: '#fff' }} required />
@@ -125,12 +116,12 @@ function App() {
   return (
     <div className="app-wrapper">
       <nav className="nav-sidebar">
-        <div className="nav-item active" style={{ marginBottom: '2rem' }}><Icon name="zap" size={32} /></div>
-        <div className={`nav-item ${activeTab === 'builder' ? 'active' : ''}`} onClick={() => setActiveTab('builder')}><Icon name="home" /></div>
-        <div className={`nav-item ${activeTab === 'connection' ? 'active' : ''}`} onClick={() => setActiveTab('connection')}><Icon name="connection" /></div>
-        <div className={`nav-item ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}><Icon name="history" /></div>
-        <div className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}><Icon name="settings" /></div>
-        <div className="nav-item" onClick={handleLogout} style={{ marginTop: 'auto', color: '#ff4444' }}><Icon name="trash" /></div>
+        <div className="nav-item active" style={{ marginBottom: '2.5rem' }}><Icon name="zap" size={28} /></div>
+        <div className={`nav-item ${activeTab === 'builder' ? 'active' : ''}`} onClick={() => setActiveTab('builder')} title="Constructor"><Icon name="home" /></div>
+        <div className={`nav-item ${activeTab === 'connection' ? 'active' : ''}`} onClick={() => setActiveTab('connection')} title="Conexión"><Icon name="connection" /></div>
+        <div className={`nav-item ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')} title="Historial"><Icon name="history" /></div>
+        <div className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')} title="Configuración"><Icon name="settings" /></div>
+        <div className="nav-item" onClick={handleLogout} style={{ marginTop: 'auto' }} title="Salir"><Icon name="logout" color="#ff4444" /></div>
       </nav>
 
       <div className="main-layout">
@@ -142,28 +133,27 @@ function App() {
               <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>{status}</span>
             </div>
             {activeCampaign && (
-              <div style={{ flex: 1, maxWidth: '350px', marginLeft: '2rem', background: 'rgba(0, 255, 136, 0.05)', padding: '0.8rem', borderRadius: '12px', border: '1px solid var(--primary)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', marginBottom: '4px' }}>
-                  <span style={{ fontWeight: 800 }}>ENVÍO: {activeCampaign.sentCount}/{activeCampaign.total}</span>
-                </div>
-                <div style={{ height: '4px', background: 'rgba(0,0,0,0.2)', borderRadius: '10px', overflow: 'hidden' }}>
-                  <div style={{ width: `${(activeCampaign.sentCount / activeCampaign.total) * 100}%`, height: '100%', background: 'var(--primary)', transition: '0.5s' }} />
-                </div>
+              <div className="campaign-progress-bar">
+                <span>⚡ {activeCampaign.sentCount} / {activeCampaign.total}</span>
+                <div className="progress-bg"><div className="progress-fill" style={{ width: `${(activeCampaign.sentCount / activeCampaign.total) * 100}%` }} /></div>
               </div>
             )}
           </div>
-          <div style={{ fontSize: '0.8rem', opacity: 0.5 }}>{user?.username} ({user?.role || 'user'})</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+             <span style={{ fontSize: '0.75rem', opacity: 0.5 }}>{user.username} ({user.role})</span>
+             {status === 'BOT ONLINE' && <button className="btn" onClick={fetchLabels} style={{ background: 'var(--glass)', color: '#fff' }}><Icon name="refresh" size={16}/> Sincronizar</button>}
+          </div>
         </header>
 
         <div className="content-body">
           {activeTab === 'builder' && (
             <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', width: '100%', height: '100%' }}>
               <aside className="sub-sidebar">
-                <h3 style={{ fontSize: '0.7rem', opacity: 0.4, textTransform: 'uppercase', marginBottom: '1.2rem' }}>Flujos</h3>
+                <h3 className="section-title">Flujos Guardados</h3>
                 {savedFlows.map(f => (
                   <div key={f.id} className="label-item" onClick={() => setFlowSteps(JSON.parse(f.steps))}>{f.name}</div>
                 ))}
-                <h3 style={{ fontSize: '0.7rem', opacity: 0.4, textTransform: 'uppercase', margin: '2rem 0 1.2rem 0' }}>Etiquetas</h3>
+                <h3 className="section-title" style={{ marginTop: '2rem' }}>Etiquetas WA</h3>
                 {labels.map(l => (
                   <div key={l.id} className={`label-item ${selectedLabels.includes(l.id) ? 'active' : ''}`} onClick={() => setSelectedLabels(selectedLabels.includes(l.id) ? selectedLabels.filter(x => x !== l.id) : [...selectedLabels, l.id])}>
                     {l.name} {selectedLabels.includes(l.id) && '✓'}
@@ -174,68 +164,82 @@ function App() {
                  <div className="glass-card" style={{ marginBottom: '1.5rem' }}>
                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
                     <div>
-                      <label style={{ fontSize: '0.75rem', opacity: 0.5 }}>Delay Leads (Seg)</label>
-                      <input type="number" value={config.minLeadDelay} onChange={(e) => setConfig({...config, minLeadDelay: parseInt(e.target.value)})} style={{ width: '100%', padding: '0.6rem', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border)', borderRadius: '10px', color: '#fff', marginTop: '5px' }} />
+                      <label className="input-label">Delay Leads (Seg)</label>
+                      <input type="number" value={config.minLeadDelay} onChange={(e) => setConfig({...config, minLeadDelay: parseInt(e.target.value)})} className="styled-input" />
                     </div>
                     <div>
-                      <label style={{ fontSize: '0.75rem', opacity: 0.5 }}>Delay Mensajes (Seg)</label>
-                      <input type="number" value={config.minStepDelay} onChange={(e) => setConfig({...config, minStepDelay: parseInt(e.target.value)})} style={{ width: '100%', padding: '0.6rem', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border)', borderRadius: '10px', color: '#fff', marginTop: '5px' }} />
+                      <label className="input-label">Delay Pasos (Seg)</label>
+                      <input type="number" value={config.minStepDelay} onChange={(e) => setConfig({...config, minStepDelay: parseInt(e.target.value)})} className="styled-input" />
                     </div>
                   </div>
                 </div>
                 <div className="glass-card">
-                  <h2>Constructor</h2>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
+                    <h2 style={{ fontSize: '1.2rem' }}>Estrategia de Mensajes</h2>
+                    <button className="btn" style={{ background: 'var(--glass)', color: '#fff' }} onClick={() => setFlowSteps([...flowSteps, { id: Date.now(), type: 'message', content: '' }])}>+ Bloque</button>
+                  </div>
                   {flowSteps.map((step, i) => (
-                    <div key={step.id} className="flow-step" style={{ marginBottom: '1rem' }}>
-                      <textarea value={step.content} onChange={(e) => setFlowSteps(flowSteps.map(s => s.id === step.id ? { ...s, content: e.target.value } : s))} rows={3} placeholder="Mensaje..." style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border)', borderRadius: '12px', padding: '1rem', color: '#fff' }} />
+                    <div key={step.id} className="flow-step">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.8rem' }}>
+                        <span style={{ fontSize: '0.7rem', opacity: 0.4 }}>PASO #{i+1}</span>
+                        <Icon name="trash" size={14} color="#ff4444" onClick={() => setFlowSteps(flowSteps.filter(s => s.id !== step.id))} />
+                      </div>
+                      <textarea value={step.content} onChange={(e) => setFlowSteps(flowSteps.map(s => s.id === step.id ? { ...s, content: e.target.value } : s))} rows={3} className="styled-textarea" placeholder="Escribí tu mensaje aquí..." />
                     </div>
                   ))}
-                  <button className="btn btn-primary" style={{ width: '100%', height: '55px' }} onClick={() => setShowModal(true)}>🚀 LANZAR</button>
+                  <button className="btn btn-primary" style={{ width: '100%', height: '55px', marginTop: '1rem' }} onClick={() => setShowModal(true)}>🚀 LANZAR CAMPAÑA</button>
                 </div>
               </main>
             </div>
           )}
-          
+
           {activeTab === 'connection' && (
-            <div className="workspace">
-              <div className="glass-card" style={{ textAlign: 'center', maxWidth: '400px' }}>
-                <Icon name="connection" size={48} />
-                <h2>Conexión</h2>
-                <div style={{ display: 'flex', gap: '10px', margin: '20px 0' }}>
-                   <button className="btn btn-primary" onClick={() => axios.post(`${API_URL}/api/whatsapp/start`)}>ENCENDER</button>
-                   <button className="btn" onClick={() => axios.post(`${API_URL}/api/whatsapp/stop`)}>APAGAR</button>
+             <div className="workspace">
+                <div className="glass-card" style={{ textAlign: 'center', maxWidth: '450px' }}>
+                  <Icon name="connection" size={60} />
+                  <h2 style={{ margin: '1.5rem 0' }}>Conexión WhatsApp</h2>
+                  <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
+                    <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => axios.post(`${API_URL}/api/whatsapp/start`)}>ENCENDER</button>
+                    <button className="btn" style={{ flex: 1, background: 'rgba(255,68,68,0.1)', color: '#ff4444', border: '1px solid rgba(255,68,68,0.2)' }} onClick={() => axios.post(`${API_URL}/api/whatsapp/stop`)}>APAGAR</button>
+                  </div>
+                  {qr && <div className="qr-container"><img src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qr)}`} alt="QR" /></div>}
+                  {status === 'BOT ONLINE' && <div className="success-badge">✅ BOT CONECTADO CORRECTAMENTE</div>}
                 </div>
-                {qr && <div style={{ background: '#fff', padding: '10px', borderRadius: '10px' }}><img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qr)}`} alt="QR" /></div>}
-              </div>
-            </div>
+             </div>
           )}
 
           {activeTab === 'history' && (
-            <div className="workspace">
-              <div className="glass-card">
-                <h2>Historial</h2>
-                {campaigns.map(c => (
-                  <div key={c.id} className="label-item" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span>{c.flow_name}</span>
-                    <span>{c.sent_count}/{c.total_count} ✅</span>
-                  </div>
-                ))}
-              </div>
-            </div>
+             <div className="workspace">
+                <div className="glass-card">
+                  <h2>Historial de Envíos</h2>
+                  {campaigns.map(c => (
+                    <div key={c.id} className="history-row" onClick={() => setExpandedCampaign(expandedCampaign === c.id ? null : c.id)}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <div style={{ fontWeight: 700 }}>{c.flow_name}</div>
+                          <div style={{ fontSize: '0.7rem', opacity: 0.4 }}>{new Date(c.created_at).toLocaleString()}</div>
+                        </div>
+                        <div className="count-badge">{c.sent_count} / {c.total_count}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+             </div>
           )}
 
           {activeTab === 'settings' && (
-            <div className="workspace">
-              <div className="glass-card" style={{ maxWidth: '400px' }}>
-                <Icon name="lock" size={48} />
-                <h2>Seguridad</h2>
-                <button className="btn btn-primary" style={{ width: '100%', marginTop: '20px' }} onClick={() => {
-                  const nu = prompt("Nuevo Usuario:", user.username);
-                  const np = prompt("Nueva Pass:");
-                  if(nu && np) axios.put(`${API_URL}/api/users/update`, {id: user.id, username: nu, password: np}).then(() => handleLogout());
-                }}>CAMBIAR CLAVES</button>
-              </div>
-            </div>
+             <div className="workspace">
+                <div className="glass-card" style={{ maxWidth: '500px' }}>
+                  <Icon name="settings" size={60} />
+                  <h2 style={{ margin: '1.5rem 0' }}>Configuración de Seguridad</h2>
+                  <p style={{ opacity: 0.5, marginBottom: '2rem' }}>Modificá tus credenciales de acceso al sistema.</p>
+                  <button className="btn btn-primary" style={{ height: '55px', width: '100%' }} onClick={() => {
+                    const nu = prompt("Nuevo Usuario:", user.username);
+                    const np = prompt("Nueva Contraseña:");
+                    if(nu && np) axios.put(`${API_URL}/api/users/update`, {id: user.id, username: nu, password: np}).then(() => handleLogout());
+                  }}>ACTUALIZAR CREDENCIALES</button>
+                </div>
+             </div>
           )}
         </div>
       </div>
