@@ -1,19 +1,15 @@
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
-const fs = require('fs');
 
 let client = null;
 let io = null;
 
 const initWhatsApp = (socketIo) => {
     io = socketIo;
-    console.log('--- WHATSAPP MODULE READY (WAITING FOR START COMMAND) ---');
+    console.log('--- WHATSAPP MODULE READY ---');
 };
 
 const startClient = async () => {
-    if (client) {
-        console.log('Client already exists, stopping first...');
-        await stopClient();
-    }
+    if (client) await stopClient();
 
     console.log('--- STARTING WHATSAPP CLIENT ---');
     client = new Client({
@@ -30,12 +26,24 @@ const startClient = async () => {
     });
 
     client.on('ready', async () => {
-        console.log('--- READY ---');
+        console.log('--- CLIENT READY (SYNCING) ---');
         io.emit('ready', true);
-        try {
-            const labels = await client.getLabels();
-            io.emit('labels', labels);
-        } catch (e) {}
+        
+        // Intentar cargar etiquetas con re-intentos (WhatsApp tarda en sincronizar)
+        let attempts = 0;
+        const fetchInterval = setInterval(async () => {
+            attempts++;
+            try {
+                const labels = await client.getLabels();
+                console.log(`Attempt ${attempts}: Found ${labels.length} labels`);
+                if (labels.length > 0 || attempts > 5) {
+                    io.emit('labels', labels);
+                    clearInterval(fetchInterval);
+                }
+            } catch (e) {
+                console.log(`Attempt ${attempts} failed: ${e.message}`);
+            }
+        }, 5000);
     });
 
     client.on('disconnected', () => {
@@ -54,22 +62,21 @@ const startClient = async () => {
 
 const stopClient = async () => {
     if (client) {
-        try {
-            await client.destroy();
-            console.log('--- CLIENT STOPPED ---');
-        } catch (e) {
-            console.error('Stop Error:', e);
-        }
+        try { await client.destroy(); } catch (e) {}
         client = null;
         io.emit('disconnected');
     }
 };
 
-const getClient = () => client;
-
 const getLabels = async () => {
     if (!client) return [];
-    try { return await client.getLabels(); } catch (e) { return []; }
+    try {
+        const labels = await client.getLabels();
+        return labels;
+    } catch (e) {
+        console.error("Error manual getLabels:", e.message);
+        return [];
+    }
 };
 
 const getContactsByLabel = async (labelId) => {
@@ -88,4 +95,4 @@ const sendMessage = async (to, content, media = null) => {
     return await client.sendMessage(to, content);
 };
 
-module.exports = { initWhatsApp, startClient, stopClient, getClient, getLabels, getContactsByLabel, sendMessage };
+module.exports = { initWhatsApp, startClient, stopClient, getLabels, getContactsByLabel, sendMessage };
