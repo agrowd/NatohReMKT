@@ -19,6 +19,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 let activeCampaign = null;
 
+// Multer Config
 const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, 'uploads/'),
     filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
@@ -29,23 +30,22 @@ const fs = require('fs');
 if (!fs.existsSync('./uploads')) fs.mkdirSync('./uploads');
 
 app.post('/api/upload', upload.single('file'), (req, res) => {
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-    res.json({ url: `/uploads/${req.file.filename}` });
+    if (!req.file) return res.status(400).json({ error: 'No file' });
+    // Retornamos el path absoluto para que el motor de whatsapp lo encuentre facil
+    const fullPath = path.join(__dirname, 'uploads', req.file.filename);
+    res.json({ url: fullPath, filename: req.file.filename });
 });
 
 // --- Bot Control ---
 app.get('/api/whatsapp/status', (req, res) => {
     res.json({ ...getStatus(), activeCampaign });
 });
-
 app.post('/api/whatsapp/start', async (req, res) => {
-    try { await startClient(); res.json({ message: 'Iniciado' }); } catch (err) { res.status(500).json({ error: err.message }); }
+    try { await startClient(); res.json({ message: 'OK' }); } catch (err) { res.status(500).json({ error: err.message }); }
 });
-
 app.post('/api/whatsapp/stop', async (req, res) => {
-    try { await stopClient(); res.json({ message: 'Detenido' }); } catch (err) { res.status(500).json({ error: err.message }); }
+    try { await stopClient(); res.json({ message: 'OK' }); } catch (err) { res.status(500).json({ error: err.message }); }
 });
-
 app.post('/api/whatsapp/logout', async (req, res) => {
     try { await logout(); res.json({ success: true }); } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -54,7 +54,6 @@ app.post('/api/whatsapp/logout', async (req, res) => {
 app.get('/api/flows', (req, res) => {
     res.json(db.prepare('SELECT * FROM flows ORDER BY created_at DESC').all());
 });
-
 app.post('/api/flows', (req, res) => {
     const { name, steps } = req.body;
     const info = db.prepare('INSERT INTO flows (name, steps) VALUES (?, ?)').run(name, JSON.stringify(steps));
@@ -84,10 +83,8 @@ app.post('/api/campaigns', async (req, res) => {
         const campaign = db.prepare('INSERT INTO campaigns (flow_id, label, total_count) VALUES (?, ?, ?)')
             .run(flowId, labelIds.join(','), uniqueContacts.length);
         const campaignId = campaign.lastInsertRowid;
-        
         activeCampaign = { campaignId, flowName: flow.name, sentCount: 0, total: uniqueContacts.length };
         startCampaignProcess(campaignId, uniqueContacts, JSON.parse(flow.steps), config);
-        
         res.json({ campaignId, contactCount: uniqueContacts.length });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -101,7 +98,7 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
             for (const step of steps) {
                 if (step.type === 'message') {
                     const resolvedContent = resolveSpintax(step.content);
-                    await sendMessage(contact.id._serialized, resolvedContent, step.mediaUrl);
+                    await sendMessage(contact.id._serialized, resolvedContent, step.mediaPath);
                     const stepDelay = Math.floor(Math.random() * (config.maxStepDelay - config.minStepDelay + 1) + config.minStepDelay);
                     await new Promise(r => setTimeout(r, stepDelay * 1000));
                 } else if (step.type === 'delay') {
@@ -109,7 +106,7 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
                 }
             }
             sentCount++;
-            activeCampaign.sentCount = sentCount;
+            if(activeCampaign) activeCampaign.sentCount = sentCount;
             db.prepare('UPDATE campaigns SET sent_count = ? WHERE id = ?').run(sentCount, campaignId);
             db.prepare('INSERT INTO logs (campaign_id, contact_id, status) VALUES (?, ?, ?)').run(campaignId, contact.id._serialized, 'sent');
             io.emit('campaign_progress', activeCampaign);
