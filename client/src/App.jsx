@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import axios from 'axios';
 
@@ -6,7 +6,7 @@ const API_URL = window.location.protocol + '//' + window.location.hostname + ':3
 const socket = io(API_URL);
 
 // --- ICONOS SVG PREMIUM ---
-const Icon = ({ name, size = 20, color = "currentColor" }) => {
+const Icon = ({ name, size = 20, color = "currentColor", onClick, style }) => {
   const icons = {
     zap: <><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" fill="var(--primary)" stroke="none" /></>,
     home: <><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></>,
@@ -19,10 +19,11 @@ const Icon = ({ name, size = 20, color = "currentColor" }) => {
     refresh: <><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></>,
     user: <><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></>,
     clock: <><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>,
-    message: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+    message: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>,
+    clip: <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
   };
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" onClick={onClick} style={{ cursor: onClick ? 'pointer' : 'default', ...style }}>
       {icons[name] || <circle cx="12" cy="12" r="5" />}
     </svg>
   );
@@ -61,13 +62,13 @@ function App() {
   const [showModal, setShowModal] = useState(false);
   const [expandedCampaign, setExpandedCampaign] = useState(null);
   const [previews, setPreviews] = useState({});
+  const fileInputRefs = useRef({});
 
-  // ESTADO PERSISTENTE
   const [selectedLabels, setSelectedLabels] = useState(() => {
     try { return JSON.parse(localStorage.getItem('selectedLabels') || '[]'); } catch(e) { return []; }
   });
   const [flowSteps, setFlowSteps] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('flowSteps') || '[{"id":1,"type":"message","content":"¡Hola! 🚀"}]'); } catch(e) { return [{"id":1,"type":"message","content":"¡Hola! 🚀"}]; }
+    try { return JSON.parse(localStorage.getItem('flowSteps') || '[{"id":1,"type":"message","content":"¡Hola! 🚀","mediaPath":null}]'); } catch(e) { return [{"id":1,"type":"message","content":"¡Hola! 🚀","mediaPath":null}]; }
   });
   const [config, setConfig] = useState(() => {
     try { return JSON.parse(localStorage.getItem('antiSpamConfig') || '{"minLeadDelay":30,"maxLeadDelay":90,"minStepDelay":5,"maxStepDelay":15}'); } catch(e) { return {"minLeadDelay":30,"maxLeadDelay":90,"minStepDelay":5,"maxStepDelay":15}; }
@@ -124,6 +125,15 @@ function App() {
       await axios.post(`${API_URL}/api/campaigns`, { flowId: flowRes.data.id, labelIds: selectedLabels, config });
       setShowModal(true);
     } catch (e) { alert("Error al lanzar"); }
+  };
+
+  const handleFileUpload = async (stepId, file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const res = await axios.post(`${API_URL}/api/upload`, formData);
+      setFlowSteps(flowSteps.map(s => s.id === stepId ? { ...s, mediaPath: res.data.url, mediaName: file.name } : s));
+    } catch (e) { alert("Error al subir archivo"); }
   };
 
   if (!user) {
@@ -222,19 +232,28 @@ function App() {
                     <h2 style={{ fontSize: '1.2rem' }}>Estrategia de Mensajes</h2>
                     <div style={{ display: 'flex', gap: '10px' }}>
                        <button className="btn" style={{ background: 'var(--glass)', color: '#fff' }} onClick={() => { const n = prompt("Nombre:"); if(n) axios.post(`${API_URL}/api/flows`, {name: n, steps: flowSteps}).then(fetchFlows) }}><Icon name="save" size={14}/> Guardar</button>
-                       <button className="btn" style={{ background: 'var(--glass)', color: '#fff' }} onClick={() => setFlowSteps([...flowSteps, { id: Date.now(), type: 'message', content: '' }])}>+ Bloque</button>
+                       <button className="btn" style={{ background: 'var(--glass)', color: '#fff' }} onClick={() => setFlowSteps([...flowSteps, { id: Date.now(), type: 'message', content: '', mediaPath: null }])}>+ Bloque</button>
                     </div>
                   </div>
                   {flowSteps.map((step, i) => (
                     <div key={step.id} className="flow-step" style={{ marginBottom: '1.5rem' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.8rem' }}>
                         <span style={{ fontSize: '0.7rem', opacity: 0.4, fontWeight: 800 }}>PASO #{i+1}</span>
-                        <div style={{ display: 'flex', gap: '12px' }}>
-                          <Icon name="eye" size={14} onClick={() => { const r = resolveSpintaxLocal(step.content); setPreviews({...previews, [step.id]: r}) }} style={{ cursor: 'pointer', opacity: 0.5 }} />
-                          <Icon name="trash" size={14} color="#ff4444" onClick={() => setFlowSteps(flowSteps.filter(s => s.id !== step.id))} style={{ cursor: 'pointer', opacity: 0.5 }} />
+                        <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+                          <input type="file" ref={el => fileInputRefs.current[step.id] = el} style={{ display: 'none' }} onChange={(e) => handleFileUpload(step.id, e.target.files[0])} />
+                          <Icon name="clip" size={16} onClick={() => fileInputRefs.current[step.id].click()} style={{ opacity: step.mediaPath ? 1 : 0.4, color: step.mediaPath ? 'var(--primary)' : 'inherit' }} />
+                          <Icon name="eye" size={16} onClick={() => { const r = resolveSpintaxLocal(step.content); setPreviews({...previews, [step.id]: r}) }} style={{ opacity: 0.4 }} />
+                          <Icon name="trash" size={16} color="#ff4444" onClick={() => setFlowSteps(flowSteps.filter(s => s.id !== step.id))} style={{ opacity: 0.4 }} />
                         </div>
                       </div>
                       <textarea value={step.content} onChange={(e) => setFlowSteps(flowSteps.map(s => s.id === step.id ? { ...s, content: e.target.value } : s))} rows={3} className="styled-textarea" placeholder="Escribí tu mensaje aquí..." />
+                      {step.mediaPath && (
+                        <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(0,255,136,0.05)', padding: '8px 12px', borderRadius: '10px', border: '1px solid rgba(0,255,136,0.1)' }}>
+                          <Icon name="clip" size={12} color="var(--primary)" />
+                          <span style={{ fontSize: '0.75rem', color: 'var(--primary)', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{step.mediaName || "Archivo adjunto"}</span>
+                          <Icon name="trash" size={12} color="#ff4444" onClick={() => setFlowSteps(flowSteps.map(s => s.id === step.id ? { ...s, mediaPath: null, mediaName: null } : s))} style={{ cursor: 'pointer' }} />
+                        </div>
+                      )}
                       {previews[step.id] && <div style={{ marginTop: '12px', fontSize: '0.8rem', color: 'var(--primary)', padding: '10px', background: 'rgba(0,255,136,0.05)', borderRadius: '10px', border: '1px dashed var(--primary)' }}>Vista Previa: {previews[step.id]}</div>}
                     </div>
                   ))}
@@ -275,7 +294,12 @@ function App() {
                       </div>
                       {expandedCampaign === c.id && (
                         <div style={{ marginTop: '1rem', background: 'rgba(0,0,0,0.2)', padding: '1.5rem', borderRadius: '15px' }}>
-                          {JSON.parse(c.steps).map((s, idx) => <div key={idx} style={{ marginBottom: '10px', fontSize: '0.85rem', background: 'var(--glass)', padding: '12px', borderRadius: '10px', border: '1px solid var(--glass-border)' }}>{s.content}</div>)}
+                          {JSON.parse(c.steps).map((s, idx) => (
+                            <div key={idx} style={{ marginBottom: '10px', fontSize: '0.85rem', background: 'var(--glass)', padding: '12px', borderRadius: '10px', border: '1px solid var(--glass-border)' }}>
+                              {s.content}
+                              {s.mediaPath && <div style={{ marginTop: '8px', color: 'var(--primary)', fontSize: '0.7rem' }}>📎 Con archivo adjunto</div>}
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>
