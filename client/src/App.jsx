@@ -16,7 +16,10 @@ const Icon = ({ name, size = 20, color = "currentColor" }) => {
     logout: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></>,
     trash: <><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></>,
     eye: <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></>,
-    refresh: <><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></>
+    refresh: <><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></>,
+    user: <><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></>,
+    clock: <><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>,
+    message: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -130,9 +133,9 @@ function App() {
           <Icon name="zap" size={60} />
           <h2 style={{ fontSize: '2rem', margin: '1.5rem 0 2rem 0', fontWeight: 800 }}>NatohReMKT</h2>
           <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <input type="text" placeholder="Usuario" value={loginForm.username} onChange={(e) => setLoginForm({...loginForm, username: e.target.value})} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', padding: '1rem', borderRadius: '12px', color: '#fff' }} required />
-            <input type="password" placeholder="Contraseña" value={loginForm.password} onChange={(e) => setLoginForm({...loginForm, password: e.target.value})} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', padding: '1rem', borderRadius: '12px', color: '#fff' }} required />
-            <button type="submit" className="btn btn-primary" style={{ height: '55px', marginTop: '1rem' }}>ENTRAR</button>
+            <input type="text" placeholder="Usuario" value={loginForm.username} onChange={(e) => setLoginForm({...loginForm, username: e.target.value})} className="styled-input" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', textAlign: 'left' }} required />
+            <input type="password" placeholder="Contraseña" value={loginForm.password} onChange={(e) => setLoginForm({...loginForm, password: e.target.value})} className="styled-input" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', textAlign: 'left' }} required />
+            <button type="submit" className="btn btn-primary" style={{ height: '55px', marginTop: '1rem', width: '100%' }}>ENTRAR</button>
           </form>
         </div>
       </div>
@@ -159,9 +162,13 @@ function App() {
               <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>{status}</span>
             </div>
             {activeCampaign && (
-              <div className="campaign-progress-bar">
-                <span>⚡ {activeCampaign.sentCount} / {activeCampaign.total}</span>
-                <div className="progress-bg"><div className="progress-fill" style={{ width: `${(activeCampaign.sentCount / activeCampaign.total) * 100}%` }} /></div>
+              <div style={{ flex: 1, maxWidth: '350px', marginLeft: '2rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', marginBottom: '4px' }}>
+                  <span style={{ fontWeight: 800 }}>⚡ {activeCampaign.sentCount} / {activeCampaign.total}</span>
+                </div>
+                <div style={{ height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '10px', overflow: 'hidden' }}>
+                  <div style={{ width: `${(activeCampaign.sentCount / activeCampaign.total) * 100}%`, height: '100%', background: 'var(--primary)', boxShadow: '0 0 10px var(--primary)' }} />
+                </div>
               </div>
             )}
           </div>
@@ -192,18 +199,20 @@ function App() {
               <main className="workspace">
                  <div className="glass-card" style={{ marginBottom: '1.5rem' }}>
                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
-                    <div>
-                      <label className="input-label">Delay Leads (Mín-Máx seg)</label>
-                      <div style={{ display: 'flex', gap: '10px', marginTop: '5px' }}>
-                        <input type="number" value={config.minLeadDelay} onChange={(e) => setConfig({...config, minLeadDelay: parseInt(e.target.value)})} className="styled-input" placeholder="Min" />
-                        <input type="number" value={config.maxLeadDelay} onChange={(e) => setConfig({...config, maxLeadDelay: parseInt(e.target.value)})} className="styled-input" placeholder="Max" />
+                    <div className="styled-input-group">
+                      <label className="input-label"><Icon name="user" size={14} /> Delay entre Leads (Franja seg)</label>
+                      <div className="range-container">
+                        <input type="number" value={config.minLeadDelay} onChange={(e) => setConfig({...config, minLeadDelay: parseInt(e.target.value)})} className="styled-input" placeholder="MÍN" />
+                        <div className="range-divider" />
+                        <input type="number" value={config.maxLeadDelay} onChange={(e) => setConfig({...config, maxLeadDelay: parseInt(e.target.value)})} className="styled-input" placeholder="MÁX" />
                       </div>
                     </div>
-                    <div>
-                      <label className="input-label">Delay Pasos (Mín-Máx seg)</label>
-                      <div style={{ display: 'flex', gap: '10px', marginTop: '5px' }}>
-                        <input type="number" value={config.minStepDelay} onChange={(e) => setConfig({...config, minStepDelay: parseInt(e.target.value)})} className="styled-input" placeholder="Min" />
-                        <input type="number" value={config.maxStepDelay} onChange={(e) => setConfig({...config, maxStepDelay: parseInt(e.target.value)})} className="styled-input" placeholder="Max" />
+                    <div className="styled-input-group">
+                      <label className="input-label"><Icon name="message" size={14} /> Delay entre Pasos (Franja seg)</label>
+                      <div className="range-container">
+                        <input type="number" value={config.minStepDelay} onChange={(e) => setConfig({...config, minStepDelay: parseInt(e.target.value)})} className="styled-input" placeholder="MÍN" />
+                        <div className="range-divider" />
+                        <input type="number" value={config.maxStepDelay} onChange={(e) => setConfig({...config, maxStepDelay: parseInt(e.target.value)})} className="styled-input" placeholder="MÁX" />
                       </div>
                     </div>
                   </div>
@@ -217,16 +226,16 @@ function App() {
                     </div>
                   </div>
                   {flowSteps.map((step, i) => (
-                    <div key={step.id} className="flow-step">
+                    <div key={step.id} className="flow-step" style={{ marginBottom: '1.5rem' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.8rem' }}>
-                        <span style={{ fontSize: '0.7rem', opacity: 0.4 }}>PASO #{i+1}</span>
+                        <span style={{ fontSize: '0.7rem', opacity: 0.4, fontWeight: 800 }}>PASO #{i+1}</span>
                         <div style={{ display: 'flex', gap: '12px' }}>
-                          <Icon name="eye" size={14} onClick={() => { const r = resolveSpintaxLocal(step.content); setPreviews({...previews, [step.id]: r}) }} />
-                          <Icon name="trash" size={14} color="#ff4444" onClick={() => setFlowSteps(flowSteps.filter(s => s.id !== step.id))} />
+                          <Icon name="eye" size={14} onClick={() => { const r = resolveSpintaxLocal(step.content); setPreviews({...previews, [step.id]: r}) }} style={{ cursor: 'pointer', opacity: 0.5 }} />
+                          <Icon name="trash" size={14} color="#ff4444" onClick={() => setFlowSteps(flowSteps.filter(s => s.id !== step.id))} style={{ cursor: 'pointer', opacity: 0.5 }} />
                         </div>
                       </div>
                       <textarea value={step.content} onChange={(e) => setFlowSteps(flowSteps.map(s => s.id === step.id ? { ...s, content: e.target.value } : s))} rows={3} className="styled-textarea" placeholder="Escribí tu mensaje aquí..." />
-                      {previews[step.id] && <div style={{ marginTop: '8px', fontSize: '0.8rem', color: 'var(--primary)' }}>Previa: {previews[step.id]}</div>}
+                      {previews[step.id] && <div style={{ marginTop: '12px', fontSize: '0.8rem', color: 'var(--primary)', padding: '10px', background: 'rgba(0,255,136,0.05)', borderRadius: '10px', border: '1px dashed var(--primary)' }}>Vista Previa: {previews[step.id]}</div>}
                     </div>
                   ))}
                   <button className="btn btn-primary" style={{ width: '100%', height: '55px', marginTop: '1rem' }} onClick={startCampaign}>🚀 LANZAR CAMPAÑA</button>
@@ -246,7 +255,7 @@ function App() {
                   </div>
                   {qr && <div className="qr-container"><img src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qr)}`} alt="QR" /></div>}
                   {status === 'BOT ONLINE' && <div className="success-badge">✅ BOT CONECTADO CORRECTAMENTE</div>}
-                  <button className="btn" style={{ marginTop: '1rem', width: '100%', background: 'rgba(255,255,255,0.05)' }} onClick={() => { if(confirm("¿Cerrar sesión?")) axios.post(`${API_URL}/api/whatsapp/logout`).then(() => window.location.reload()) }}>CERRAR SESIÓN (LOGOUT)</button>
+                  <button className="btn" style={{ marginTop: '1.5rem', width: '100%', background: 'rgba(255,255,255,0.05)' }} onClick={() => { if(confirm("¿Cerrar sesión?")) axios.post(`${API_URL}/api/whatsapp/logout`).then(() => window.location.reload()) }}>CERRAR SESIÓN (LOGOUT)</button>
                 </div>
              </div>
           )}
@@ -254,19 +263,19 @@ function App() {
           {activeTab === 'history' && (
              <div className="workspace">
                 <div className="glass-card">
-                  <h2>Historial de Envíos</h2>
+                  <h2 style={{ marginBottom: '2rem' }}>Historial de Envíos</h2>
                   {campaigns.map(c => (
-                    <div key={c.id} className="history-row" onClick={() => setExpandedCampaign(expandedCampaign === c.id ? null : c.id)}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div key={c.id} style={{ marginBottom: '1rem', borderBottom: '1px solid var(--glass-border)', paddingBottom: '1rem' }}>
+                      <div className="label-item" onClick={() => setExpandedCampaign(expandedCampaign === c.id ? null : c.id)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
                           <div style={{ fontWeight: 700 }}>{c.flow_name}</div>
                           <div style={{ fontSize: '0.7rem', opacity: 0.4 }}>{new Date(c.created_at).toLocaleString()}</div>
                         </div>
-                        <div className="count-badge">{c.sent_count} / {c.total_count}</div>
+                        <div style={{ fontWeight: 800, color: 'var(--primary)', background: 'rgba(0,255,136,0.1)', padding: '5px 12px', borderRadius: '20px' }}>{c.sent_count} / {c.total_count}</div>
                       </div>
                       {expandedCampaign === c.id && (
-                        <div style={{ marginTop: '1rem', background: 'rgba(0,0,0,0.1)', padding: '1rem', borderRadius: '10px' }}>
-                          {JSON.parse(c.steps).map((s, idx) => <div key={idx} style={{ marginBottom: '8px', fontSize: '0.85rem', background: 'var(--glass)', padding: '10px', borderRadius: '8px' }}>{s.content}</div>)}
+                        <div style={{ marginTop: '1rem', background: 'rgba(0,0,0,0.2)', padding: '1.5rem', borderRadius: '15px' }}>
+                          {JSON.parse(c.steps).map((s, idx) => <div key={idx} style={{ marginBottom: '10px', fontSize: '0.85rem', background: 'var(--glass)', padding: '12px', borderRadius: '10px', border: '1px solid var(--glass-border)' }}>{s.content}</div>)}
                         </div>
                       )}
                     </div>
