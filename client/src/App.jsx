@@ -20,7 +20,8 @@ const Icon = ({ name, size = 20, color = "currentColor", onClick, style }) => {
     user: <><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></>,
     clock: <><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>,
     message: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>,
-    clip: <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+    clip: <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>,
+    plus: <><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></>
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" onClick={onClick} style={{ cursor: onClick ? 'pointer' : 'default', ...style }}>
@@ -29,7 +30,7 @@ const Icon = ({ name, size = 20, color = "currentColor", onClick, style }) => {
   );
 };
 
-// Función Spintax Local
+// Función Spintax Local (para el botón del ojo)
 const resolveSpintaxLocal = (text) => {
   if (!text) return "";
   let loopCount = 0;
@@ -41,6 +42,32 @@ const resolveSpintaxLocal = (text) => {
     loopCount++;
   }
   return text;
+};
+
+// --- HELPERS PARA VARIANTES ---
+// Normaliza flujos antiguos a la nueva estructura de [variants]
+const normalizeSteps = (steps) => {
+  return steps.map(s => {
+    if (s.variants) return s;
+    // Si es un flow viejo, convertimos content a un array de variantes
+    const content = s.content || "";
+    // Si ya era un spintax manual, lo dejamos como 1 sola variante. El backend lo resolverá igual.
+    return { ...s, variants: [content] };
+  });
+};
+
+// Compila las variantes en un string Spintax para que el Backend lo entienda
+const compileSteps = (steps) => {
+  return steps.map(step => {
+    // Filtramos variantes vacías
+    const validVariants = step.variants.filter(v => v.trim() !== "");
+    let finalContent = "";
+    if (validVariants.length === 0) finalContent = "";
+    else if (validVariants.length === 1) finalContent = validVariants[0];
+    else finalContent = `{${validVariants.join('|')}}`; // Mágia del Spintax automático
+    
+    return { ...step, content: finalContent, variants: step.variants }; // Guardamos variants para restaurar la UI después
+  });
 };
 
 function App() {
@@ -67,9 +94,18 @@ function App() {
   const [selectedLabels, setSelectedLabels] = useState(() => {
     try { return JSON.parse(localStorage.getItem('selectedLabels') || '[]'); } catch(e) { return []; }
   });
+  
+  // Nuevo Estado Inicial: Soporta 'variants' en lugar de un solo 'content'
   const [flowSteps, setFlowSteps] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('flowSteps') || '[{"id":1,"type":"message","content":"¡Hola! 🚀","mediaPath":null}]'); } catch(e) { return [{"id":1,"type":"message","content":"¡Hola! 🚀","mediaPath":null}]; }
+    try { 
+      const stored = JSON.parse(localStorage.getItem('flowSteps') || '[]');
+      if(stored.length > 0) return normalizeSteps(stored);
+      return [{"id":1,"type":"message","variants":["¡Hola! 🚀"],"mediaPath":null}]; 
+    } catch(e) { 
+      return [{"id":1,"type":"message","variants":["¡Hola! 🚀"],"mediaPath":null}]; 
+    }
   });
+
   const [config, setConfig] = useState(() => {
     try { return JSON.parse(localStorage.getItem('antiSpamConfig') || '{"minLeadDelay":30,"maxLeadDelay":90,"minStepDelay":5,"maxStepDelay":15}'); } catch(e) { return {"minLeadDelay":30,"maxLeadDelay":90,"minStepDelay":5,"maxStepDelay":15}; }
   });
@@ -121,7 +157,8 @@ function App() {
     if (status !== 'BOT ONLINE') return alert('Bot desconectado');
     if (selectedLabels.length === 0) return alert('Seleccioná etiquetas');
     try {
-      const flowRes = await axios.post(`${API_URL}/api/flows`, { name: `Camp. ${new Date().toLocaleTimeString()}`, steps: flowSteps });
+      const cSteps = compileSteps(flowSteps); // Compila las variantes a Spintax
+      const flowRes = await axios.post(`${API_URL}/api/flows`, { name: `Camp. ${new Date().toLocaleTimeString()}`, steps: cSteps });
       await axios.post(`${API_URL}/api/campaigns`, { flowId: flowRes.data.id, labelIds: selectedLabels, config });
       setShowModal(true);
     } catch (e) { alert("Error al lanzar"); }
@@ -195,7 +232,7 @@ function App() {
                 <h3 className="section-title">Flujos Guardados</h3>
                 {savedFlows.map(f => (
                   <div key={f.id} className="label-item" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                     <span onClick={() => setFlowSteps(JSON.parse(f.steps))} style={{ cursor: 'pointer', flex: 1 }}>{f.name}</span>
+                     <span onClick={() => setFlowSteps(normalizeSteps(JSON.parse(f.steps)))} style={{ cursor: 'pointer', flex: 1 }}>{f.name}</span>
                      {user.role === 'admin' && <Icon name="trash" size={12} onClick={() => { if(confirm("¿Borrar?")) axios.delete(`${API_URL}/api/flows/${f.id}`).then(fetchFlows) }} style={{ opacity: 0.3 }} />}
                   </div>
                 ))}
@@ -227,34 +264,81 @@ function App() {
                     </div>
                   </div>
                 </div>
+                
                 <div className="glass-card">
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
                     <h2 style={{ fontSize: '1.2rem' }}>Estrategia de Mensajes</h2>
                     <div style={{ display: 'flex', gap: '10px' }}>
-                       <button className="btn" style={{ background: 'var(--glass)', color: '#fff' }} onClick={() => { const n = prompt("Nombre:"); if(n) axios.post(`${API_URL}/api/flows`, {name: n, steps: flowSteps}).then(fetchFlows) }}><Icon name="save" size={14}/> Guardar</button>
-                       <button className="btn" style={{ background: 'var(--glass)', color: '#fff' }} onClick={() => setFlowSteps([...flowSteps, { id: Date.now(), type: 'message', content: '', mediaPath: null }])}>+ Bloque</button>
+                       <button className="btn" style={{ background: 'var(--glass)', color: '#fff' }} onClick={() => { const n = prompt("Nombre:"); if(n) axios.post(`${API_URL}/api/flows`, {name: n, steps: compileSteps(flowSteps)}).then(fetchFlows) }}><Icon name="save" size={14}/> Guardar</button>
+                       <button className="btn" style={{ background: 'var(--glass)', color: '#fff' }} onClick={() => setFlowSteps([...flowSteps, { id: Date.now(), type: 'message', variants: [''], mediaPath: null }])}>+ Bloque</button>
                     </div>
                   </div>
+                  
                   {flowSteps.map((step, i) => (
-                    <div key={step.id} className="flow-step" style={{ marginBottom: '1.5rem' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.8rem' }}>
-                        <span style={{ fontSize: '0.7rem', opacity: 0.4, fontWeight: 800 }}>PASO #{i+1}</span>
+                    <div key={step.id} className="flow-step" style={{ marginBottom: '2rem', background: 'rgba(255,255,255,0.02)', padding: '1.5rem', borderRadius: '16px', border: '1px solid var(--glass-border)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
+                        <span style={{ fontSize: '0.8rem', opacity: 0.6, fontWeight: 800, color: 'var(--primary)' }}>BLOQUE DE MENSAJE #{i+1}</span>
                         <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
                           <input type="file" ref={el => fileInputRefs.current[step.id] = el} style={{ display: 'none' }} onChange={(e) => handleFileUpload(step.id, e.target.files[0])} />
                           <Icon name="clip" size={16} onClick={() => fileInputRefs.current[step.id].click()} style={{ opacity: step.mediaPath ? 1 : 0.4, color: step.mediaPath ? 'var(--primary)' : 'inherit' }} />
-                          <Icon name="eye" size={16} onClick={() => { const r = resolveSpintaxLocal(step.content); setPreviews({...previews, [step.id]: r}) }} style={{ opacity: 0.4 }} />
+                          <Icon name="eye" size={16} onClick={() => { 
+                             const validVars = step.variants.filter(v => v.trim() !== "");
+                             const tempContent = validVars.length > 1 ? `{${validVariants.join('|')}}` : validVars[0];
+                             const r = resolveSpintaxLocal(tempContent); 
+                             setPreviews({...previews, [step.id]: r});
+                          }} style={{ opacity: 0.4 }} />
                           <Icon name="trash" size={16} color="#ff4444" onClick={() => setFlowSteps(flowSteps.filter(s => s.id !== step.id))} style={{ opacity: 0.4 }} />
                         </div>
                       </div>
-                      <textarea value={step.content} onChange={(e) => setFlowSteps(flowSteps.map(s => s.id === step.id ? { ...s, content: e.target.value } : s))} rows={3} className="styled-textarea" placeholder="Escribí tu mensaje aquí..." />
+
+                      {/* Renderizado de Múltiples Tarjetas de Variantes */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                        {step.variants.map((vText, vIndex) => (
+                          <div key={vIndex} style={{ position: 'relative' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', paddingLeft: '0.5rem' }}>
+                              <span style={{ fontSize: '0.65rem', opacity: 0.5, fontWeight: 600, letterSpacing: '1px' }}>VARIANTE DE TEXTO {vIndex + 1}</span>
+                              {step.variants.length > 1 && (
+                                <Icon name="trash" size={12} color="#ff4444" onClick={() => {
+                                  const newVars = [...step.variants];
+                                  newVars.splice(vIndex, 1);
+                                  setFlowSteps(flowSteps.map(s => s.id === step.id ? { ...s, variants: newVars } : s));
+                                }} style={{ opacity: 0.5 }} />
+                              )}
+                            </div>
+                            <textarea 
+                              value={vText} 
+                              onChange={(e) => {
+                                const newVars = [...step.variants];
+                                newVars[vIndex] = e.target.value;
+                                setFlowSteps(flowSteps.map(s => s.id === step.id ? { ...s, variants: newVars } : s));
+                              }} 
+                              rows={3} 
+                              className="styled-textarea" 
+                              placeholder={`Escribí la variante ${vIndex + 1} del mensaje...`} 
+                              style={{ border: '1px solid rgba(255,255,255,0.05)' }}
+                            />
+                          </div>
+                        ))}
+                      </div>
+
+                      {step.variants.length < 5 && (
+                        <button className="btn" style={{ background: 'rgba(0,0,0,0.3)', color: 'var(--text-dim)', border: '1px dashed rgba(255,255,255,0.1)', width: '100%', marginTop: '1rem', padding: '10px' }} onClick={() => {
+                          setFlowSteps(flowSteps.map(s => s.id === step.id ? { ...s, variants: [...s.variants, ""] } : s));
+                        }}>
+                          <Icon name="plus" size={14} /> AÑADIR VARIANTE (Máx 5)
+                        </button>
+                      )}
+
+                      {/* Renderizado de Archivo Adjunto */}
                       {step.mediaPath && (
-                        <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(0,255,136,0.05)', padding: '8px 12px', borderRadius: '10px', border: '1px solid rgba(0,255,136,0.1)' }}>
-                          <Icon name="clip" size={12} color="var(--primary)" />
-                          <span style={{ fontSize: '0.75rem', color: 'var(--primary)', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{step.mediaName || "Archivo adjunto"}</span>
-                          <Icon name="trash" size={12} color="#ff4444" onClick={() => setFlowSteps(flowSteps.map(s => s.id === step.id ? { ...s, mediaPath: null, mediaName: null } : s))} style={{ cursor: 'pointer' }} />
+                        <div style={{ marginTop: '1.5rem', display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(0,255,136,0.05)', padding: '10px 15px', borderRadius: '10px', border: '1px solid rgba(0,255,136,0.1)' }}>
+                          <Icon name="clip" size={14} color="var(--primary)" />
+                          <span style={{ fontSize: '0.8rem', color: 'var(--primary)', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{step.mediaName || "Archivo adjunto"}</span>
+                          <Icon name="trash" size={14} color="#ff4444" onClick={() => setFlowSteps(flowSteps.map(s => s.id === step.id ? { ...s, mediaPath: null, mediaName: null } : s))} style={{ cursor: 'pointer' }} />
                         </div>
                       )}
-                      {previews[step.id] && <div style={{ marginTop: '12px', fontSize: '0.8rem', color: 'var(--primary)', padding: '10px', background: 'rgba(0,255,136,0.05)', borderRadius: '10px', border: '1px dashed var(--primary)' }}>Vista Previa: {previews[step.id]}</div>}
+                      
+                      {previews[step.id] && <div style={{ marginTop: '1rem', fontSize: '0.8rem', color: 'var(--primary)', padding: '12px', background: 'rgba(0,255,136,0.05)', borderRadius: '10px', border: '1px dashed var(--primary)' }}><b>Vista Previa Aleatoria:</b> {previews[step.id]}</div>}
                     </div>
                   ))}
                   <button className="btn btn-primary" style={{ width: '100%', height: '55px', marginTop: '1rem' }} onClick={startCampaign}>🚀 LANZAR CAMPAÑA</button>
