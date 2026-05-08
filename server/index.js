@@ -127,7 +127,16 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
         try {
             for (const step of steps) {
                 if (step.type === 'message') {
-                    const resolvedContent = resolveSpintax(step.content);
+                    // Seleccionar una variante aleatoria si existe el array de variantes
+                    let baseContent = step.content || "";
+                    if (step.variants && step.variants.length > 0) {
+                        const validVariants = step.variants.filter(v => typeof v === 'string' && v.trim() !== "");
+                        if (validVariants.length > 0) {
+                            baseContent = validVariants[Math.floor(Math.random() * validVariants.length)];
+                        }
+                    }
+
+                    const resolvedContent = resolveSpintax(baseContent); // Mantenemos spintax por si alguien lo escribe manual
                     await sendMessage(contact.id._serialized, resolvedContent, step.mediaPath);
                     const stepDelay = Math.floor(Math.random() * (config.maxStepDelay - config.minStepDelay + 1) + config.minStepDelay);
                     await new Promise(r => setTimeout(r, stepDelay * 1000));

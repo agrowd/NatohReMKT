@@ -56,17 +56,10 @@ const normalizeSteps = (steps) => {
   });
 };
 
-// Compila las variantes en un string Spintax para que el Backend lo entienda
-const compileSteps = (steps) => {
+// Ahora las variantes viajan crudas al backend, el bot elegirá una al azar independientemente
+const prepareSteps = (steps) => {
   return steps.map(step => {
-    // Filtramos variantes vacías
-    const validVariants = step.variants.filter(v => v.trim() !== "");
-    let finalContent = "";
-    if (validVariants.length === 0) finalContent = "";
-    else if (validVariants.length === 1) finalContent = validVariants[0];
-    else finalContent = `{${validVariants.join('|')}}`; // Mágia del Spintax automático
-    
-    return { ...step, content: finalContent, variants: step.variants }; // Guardamos variants para restaurar la UI después
+    return { ...step, variants: step.variants.filter(v => v.trim() !== "") };
   });
 };
 
@@ -157,8 +150,8 @@ function App() {
     if (status !== 'BOT ONLINE') return alert('Bot desconectado');
     if (selectedLabels.length === 0) return alert('Seleccioná etiquetas');
     try {
-      const cSteps = compileSteps(flowSteps); // Compila las variantes a Spintax
-      const flowRes = await axios.post(`${API_URL}/api/flows`, { name: `Camp. ${new Date().toLocaleTimeString()}`, steps: cSteps });
+      const pSteps = prepareSteps(flowSteps); // Variantes directas al motor
+      const flowRes = await axios.post(`${API_URL}/api/flows`, { name: `Camp. ${new Date().toLocaleTimeString()}`, steps: pSteps });
       await axios.post(`${API_URL}/api/campaigns`, { flowId: flowRes.data.id, labelIds: selectedLabels, config });
       setShowModal(true);
     } catch (e) { alert("Error al lanzar"); }
@@ -269,7 +262,7 @@ function App() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
                     <h2 style={{ fontSize: '1.2rem' }}>Estrategia de Mensajes</h2>
                     <div style={{ display: 'flex', gap: '10px' }}>
-                       <button className="btn" style={{ background: 'var(--glass)', color: '#fff' }} onClick={() => { const n = prompt("Nombre:"); if(n) axios.post(`${API_URL}/api/flows`, {name: n, steps: compileSteps(flowSteps)}).then(fetchFlows) }}><Icon name="save" size={14}/> Guardar</button>
+                       <button className="btn" style={{ background: 'var(--glass)', color: '#fff' }} onClick={() => { const n = prompt("Nombre:"); if(n) axios.post(`${API_URL}/api/flows`, {name: n, steps: prepareSteps(flowSteps)}).then(fetchFlows) }}><Icon name="save" size={14}/> Guardar</button>
                        <button className="btn" style={{ background: 'var(--glass)', color: '#fff' }} onClick={() => setFlowSteps([...flowSteps, { id: Date.now(), type: 'message', variants: [''], mediaPath: null }])}>+ Bloque</button>
                     </div>
                   </div>
