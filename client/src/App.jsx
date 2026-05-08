@@ -123,7 +123,11 @@ function App() {
     socket.on('ready', () => { setStatus('BOT ONLINE'); setQr(null); fetchLabels(); });
     socket.on('labels', (data) => setLabels(data || []));
     socket.on('campaign_progress', (data) => setActiveCampaign(data));
-    socket.on('campaign_finished', () => { setActiveCampaign(null); fetchCampaigns(); });
+    socket.on('campaign_finished', () => { 
+      setActiveCampaign(null); 
+      fetchCampaigns(); 
+      alert('✅ ¡Campaña Finalizada! Todos los mensajes han sido enviados o procesados exitosamente.');
+    });
     
     fetchCampaigns(); fetchFlows();
     return () => { socket.off('status'); socket.off('qr'); socket.off('ready'); socket.off('labels'); socket.off('campaign_progress'); socket.off('campaign_finished'); };
@@ -154,6 +158,7 @@ function App() {
       const flowRes = await axios.post(`${API_URL}/api/flows`, { name: `Camp. ${new Date().toLocaleTimeString()}`, steps: pSteps });
       await axios.post(`${API_URL}/api/campaigns`, { flowId: flowRes.data.id, labelIds: selectedLabels, config });
       setShowModal(true);
+      alert('🚀 ¡Campaña Iniciada! El bot está procesando los contactos en segundo plano.');
     } catch (e) { alert("Error al lanzar"); }
   };
 
