@@ -90,6 +90,20 @@ app.get('/api/labels', async (req, res) => {
     try { const labels = await getLabels(); res.json(labels || []); } catch (err) { res.json([]); }
 });
 
+// --- Contacts & Smart Tagging ---
+app.post('/api/contacts/sync', async (req, res) => {
+    try { syncAllContacts(); res.json({ message: 'Sync started' }); } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/contacts/smart-tag', async (req, res) => {
+    const { query, labelId } = req.body;
+    if (!query || !labelId) return res.status(400).json({ error: 'Faltan campos' });
+    try {
+        const result = await tagContactsByQuery(query, labelId);
+        res.json(result);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // --- Campaigns ---
 app.get('/api/campaigns', (req, res) => {
     res.json(db.prepare(`

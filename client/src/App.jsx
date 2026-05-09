@@ -194,6 +194,7 @@ function App() {
         <div className={`nav-item ${activeTab === 'builder' ? 'active' : ''}`} onClick={() => setActiveTab('builder')} title="Constructor"><Icon name="home" /></div>
         <div className={`nav-item ${activeTab === 'connection' ? 'active' : ''}`} onClick={() => setActiveTab('connection')} title="Conexión"><Icon name="connection" /></div>
         <div className={`nav-item ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')} title="Historial"><Icon name="history" /></div>
+        <div className={`nav-item ${activeTab === 'smart-tag' ? 'active' : ''}`} onClick={() => setActiveTab('smart-tag')} title="Smart Tagging"><Icon name="user" /></div>
         <div className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')} title="Configuración"><Icon name="settings" /></div>
         <div className="nav-item" onClick={handleLogout} style={{ marginTop: 'auto' }} title="Salir"><Icon name="logout" color="#ff4444" /></div>
       </nav>
@@ -386,6 +387,51 @@ function App() {
                       )}
                     </div>
                   ))}
+                </div>
+             </div>
+          )}
+
+          {activeTab === 'smart-tag' && (
+             <div className="workspace">
+                <div className="glass-card" style={{ maxWidth: '600px' }}>
+                  <Icon name="user" size={60} />
+                  <h2 style={{ margin: '1.5rem 0' }}>Smart Tagging (Etiquetado Masivo)</h2>
+                  <p style={{ opacity: 0.5, marginBottom: '2rem' }}>Buscá palabras clave en los nombres de tus contactos y asignales una etiqueta de forma automática.</p>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                    <div className="styled-input-group">
+                      <label className="input-label">Palabra a buscar en el nombre</label>
+                      <input type="text" className="styled-input" placeholder="Ej: Mayorista, Dr, Gimnasio..." id="smart-tag-query" />
+                    </div>
+                    
+                    <div className="styled-input-group">
+                      <label className="input-label">Etiqueta a asignar</label>
+                      <select className="styled-input" id="smart-tag-label" style={{ appearance: 'auto' }}>
+                        <option value="">Seleccioná una etiqueta...</option>
+                        {labels.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                      </select>
+                    </div>
+
+                    <button className="btn btn-primary" style={{ height: '55px' }} onClick={async () => {
+                      const query = document.getElementById('smart-tag-query').value;
+                      const labelId = document.getElementById('smart-tag-label').value;
+                      if (!query || !labelId) return alert("Completá los campos");
+                      if (status !== 'BOT ONLINE') return alert("Bot desconectado");
+                      
+                      if (!confirm(`Se etiquetarán todos los contactos que contengan "${query}" con la etiqueta seleccionada. ¿Continuar?`)) return;
+                      
+                      try {
+                        const res = await axios.post(`${API_URL}/api/contacts/smart-tag`, { query, labelId });
+                        alert(`✅ ¡Proceso finalizado! Se etiquetaron ${res.data.successCount} de ${res.data.totalFound} contactos encontrados.`);
+                      } catch (e) { alert("Error en el proceso"); }
+                    }}>EJECUTAR ETIQUETADO MASIVO</button>
+
+                    <div style={{ marginTop: '2rem', paddingTop: '2rem', borderTop: '1px solid var(--glass-border)' }}>
+                      <h4 style={{ marginBottom: '1rem' }}>Sincronización de Base de Datos</h4>
+                      <p style={{ fontSize: '0.8rem', opacity: 0.6, marginBottom: '1.5rem' }}>Esto descarga todos tus contactos a la base de datos local para que el sistema "recuerde" a todos, incluso si no aparecen en los chats recientes.</p>
+                      <button className="btn" style={{ background: 'var(--glass)', color: '#fff', width: '100%' }} onClick={() => axios.post(`${API_URL}/api/contacts/sync`).then(() => alert("Sincronización iniciada en segundo plano"))}>FORZAR SINCRONIZACIÓN COMPLETA</button>
+                    </div>
+                  </div>
                 </div>
              </div>
           )}

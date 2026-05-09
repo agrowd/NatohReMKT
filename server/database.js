@@ -50,6 +50,27 @@ db.prepare(`
     )
 `).run();
 
+// NUEVA: Tabla de Contactos (Cache local para evitar lazy loading)
+db.prepare(`
+    CREATE TABLE IF NOT EXISTS contacts (
+        id TEXT PRIMARY KEY,
+        name TEXT,
+        number TEXT,
+        pushname TEXT,
+        last_synced DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+`).run();
+
+// NUEVA: Relación Contactos <-> Etiquetas
+db.prepare(`
+    CREATE TABLE IF NOT EXISTS label_members (
+        label_id TEXT,
+        contact_id TEXT,
+        PRIMARY KEY (label_id, contact_id),
+        FOREIGN KEY (contact_id) REFERENCES contacts(id)
+    )
+`).run();
+
 // Insertar usuarios iniciales si no existen
 const insertUser = db.prepare('INSERT OR IGNORE INTO users (username, password, role) VALUES (?, ?, ?)');
 insertUser.run('natoh', 'Federyco88!', 'admin');
