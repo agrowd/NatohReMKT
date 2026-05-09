@@ -163,8 +163,15 @@ const syncAllContacts = async () => {
 };
 
 const tagContactsByQuery = async (query, labelId, limit = 200) => {
-    if (!client) throw new Error('Bot desconectado');
-    const contacts = await client.getContacts();
+    console.log(`[TAGGING] Iniciando búsqueda: "${query}" | Límite: ${limit}`);
+    if (!client || currentStatus !== 'BOT ONLINE') {
+        console.error("[TAGGING] Error: Bot no está listo o desconectado");
+        throw new Error('Bot desconectado o no iniciado');
+    }
+    
+    try {
+        const contacts = await client.getContacts();
+        console.log(`[TAGGING] Total contactos en agenda: ${contacts.length}`);
     const matches = contacts.filter(c => {
         const name = (c.name || c.pushname || '').toLowerCase();
         return name.includes(query.toLowerCase());
@@ -190,6 +197,7 @@ const tagContactsByQuery = async (query, labelId, limit = 200) => {
         }
     }
     if (io) io.emit('tag_progress', { current: successCount, total: matches.length, status: 'finished' });
+    console.log(`[TAGGING] Finalizado: ${successCount} contactos etiquetados con éxito.`);
     return { successCount, totalFound: matches.length };
 };
 

@@ -97,12 +97,19 @@ app.post('/api/contacts/sync', async (req, res) => {
 
 app.post('/api/contacts/smart-tag', async (req, res) => {
     const { query, labelId, limit } = req.body;
+    console.log(`--- SMART TAG REQUEST: query="${query}", label="${labelId}", limit=${limit} ---`);
     if (!query || !labelId) return res.status(400).json({ error: 'Faltan campos' });
+    
     try {
-        // Ejecutar en segundo plano para evitar timeout de Axios
-        tagContactsByQuery(query, labelId, limit || 200);
+        // Ejecutar y capturar errores iniciales
+        tagContactsByQuery(query, labelId, limit || 200).catch(err => {
+            console.error("Async Tagging Error:", err);
+        });
         res.json({ message: 'Proceso iniciado' });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { 
+        console.error("Sync Tagging Error:", err);
+        res.status(500).json({ error: err.message }); 
+    }
 });
 
 // --- Campaigns ---
