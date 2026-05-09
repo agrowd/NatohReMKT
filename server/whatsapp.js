@@ -173,16 +173,23 @@ const tagContactsByQuery = async (query, labelId, limit = 200) => {
     let successCount = 0;
     for (const contact of matches) {
         try {
+            // Asegurar que el contacto existe en nuestra DB antes de etiquetarlo
+            db.prepare(`
+                INSERT OR REPLACE INTO contacts (id, name, number, pushname) 
+                VALUES (?, ?, ?, ?)
+            `).run(contact.id._serialized, contact.name || contact.pushname, contact.number, contact.pushname);
+
             const chat = await contact.getChat();
             await chat.changeLabels([labelId]);
-            // Actualizar localmente
+            // Actualizar localmente la relación
             db.prepare('INSERT OR IGNORE INTO label_members (label_id, contact_id) VALUES (?, ?)').run(labelId, contact.id._serialized);
             successCount++;
-            if (io) io.emit('tag_progress', { current: successCount, total: matches.length });
+            if (io) io.emit('tag_progress', { current: successCount, total: matches.length, status: 'running' });
         } catch (e) {
             console.error(`Error tagging ${contact.id._serialized}:`, e);
         }
     }
+    if (io) io.emit('tag_progress', { current: successCount, total: matches.length, status: 'finished' });
     return { successCount, totalFound: matches.length };
 };
 

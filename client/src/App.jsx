@@ -81,6 +81,7 @@ function App() {
   const [activeCampaign, setActiveCampaign] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [expandedCampaign, setExpandedCampaign] = useState(null);
+  const [tagProgress, setTagProgress] = useState(null);
   const [previews, setPreviews] = useState({});
   const fileInputRefs = useRef({});
 
@@ -129,9 +130,17 @@ function App() {
       alert('✅ ¡Campaña Finalizada! Todos los mensajes han sido enviados o procesados exitosamente.');
     });
     
+    socket.on('tag_progress', (data) => {
+      setTagProgress(data);
+      if (data.status === 'finished') {
+        alert(`✅ ¡Etiquetado finalizado! Se procesaron ${data.current} contactos.`);
+        setTagProgress(null);
+      }
+    });
+    
     fetchCampaigns(); fetchFlows();
-    return () => { socket.off('status'); socket.off('qr'); socket.off('ready'); socket.off('labels'); socket.off('campaign_progress'); socket.off('campaign_finished'); };
-  }, [user]);
+    return () => { socket.off('status'); socket.off('qr'); socket.off('ready'); socket.off('labels'); socket.off('campaign_progress'); socket.off('campaign_finished'); socket.off('tag_progress'); };
+}, [user]);
 
   const fetchLabels = async () => { try { const res = await axios.get(`${API_URL}/api/labels`); setLabels(res.data || []); } catch (e) {} };
   const fetchCampaigns = async () => { try { const res = await axios.get(`${API_URL}/api/campaigns`); setCampaigns(res.data || []); } catch (e) {} };
@@ -418,7 +427,7 @@ function App() {
                       <p style={{ fontSize: '0.65rem', opacity: 0.5, marginTop: '5px' }}>Se recomienda no superar los 250 por lote para mayor seguridad.</p>
                     </div>
 
-                    <button className="btn btn-primary" style={{ height: '55px' }} onClick={async () => {
+                    <button className="btn btn-primary" style={{ height: '55px' }} disabled={tagProgress?.status === 'running'} onClick={async () => {
                       const query = document.getElementById('smart-tag-query').value;
                       const labelId = document.getElementById('smart-tag-label').value;
                       const limit = parseInt(document.getElementById('smart-tag-limit').value);
@@ -428,10 +437,23 @@ function App() {
                       if (!confirm(`Se etiquetarán un máximo de ${limit} contactos que contengan "${query}". ¿Continuar?`)) return;
                       
                       try {
-                        const res = await axios.post(`${API_URL}/api/contacts/smart-tag`, { query, labelId, limit });
-                        alert(`✅ ¡Proceso finalizado! Se etiquetaron ${res.data.successCount} contactos.`);
-                      } catch (e) { alert("Error en el proceso"); }
-                    }}>EJECUTAR ETIQUETADO MASIVO</button>
+                        await axios.post(`${API_URL}/api/contacts/smart-tag`, { query, labelId, limit });
+                        // El feedback vendrá por Socket
+                      } catch (e) { alert("Error al iniciar el proceso"); }
+                    }}>
+                      {tagProgress?.status === 'running' ? 'PROCESANDO...' : 'EJECUTAR ETIQUETADO MASIVO'}
+                    </button>
+
+                    {tagProgress && (
+                      <div style={{ marginTop: '1rem', background: 'rgba(0,255,136,0.05)', padding: '1rem', borderRadius: '12px', border: '1px solid rgba(0,255,136,0.2)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '8px' }}>
+                          <span style={{ fontWeight: 800 }}>Etiquetando: {tagProgress.current} / {tagProgress.total}</span>
+                        </div>
+                        <div style={{ height: '6px', background: 'rgba(255,255,255,0.1)', borderRadius: '10px', overflow: 'hidden' }}>
+                          <div style={{ width: `${(tagProgress.current / tagProgress.total) * 100}%`, height: '100%', background: 'var(--primary)', boxShadow: '0 0 10px var(--primary)' }} />
+                        </div>
+                      </div>
+                    )}
 
                     <div style={{ marginTop: '2rem', paddingTop: '2rem', borderTop: '1px solid var(--glass-border)' }}>
                       <h4 style={{ marginBottom: '1rem' }}>Sincronización de Base de Datos</h4>
