@@ -412,17 +412,24 @@ function App() {
                       </select>
                     </div>
 
+                    <div className="styled-input-group">
+                      <label className="input-label">Límite de personas a etiquetar</label>
+                      <input type="number" className="styled-input" defaultValue="200" id="smart-tag-limit" />
+                      <p style={{ fontSize: '0.65rem', opacity: 0.5, marginTop: '5px' }}>Se recomienda no superar los 250 por lote para mayor seguridad.</p>
+                    </div>
+
                     <button className="btn btn-primary" style={{ height: '55px' }} onClick={async () => {
                       const query = document.getElementById('smart-tag-query').value;
                       const labelId = document.getElementById('smart-tag-label').value;
+                      const limit = parseInt(document.getElementById('smart-tag-limit').value);
                       if (!query || !labelId) return alert("Completá los campos");
                       if (status !== 'BOT ONLINE') return alert("Bot desconectado");
                       
-                      if (!confirm(`Se etiquetarán todos los contactos que contengan "${query}" con la etiqueta seleccionada. ¿Continuar?`)) return;
+                      if (!confirm(`Se etiquetarán un máximo de ${limit} contactos que contengan "${query}". ¿Continuar?`)) return;
                       
                       try {
-                        const res = await axios.post(`${API_URL}/api/contacts/smart-tag`, { query, labelId });
-                        alert(`✅ ¡Proceso finalizado! Se etiquetaron ${res.data.successCount} de ${res.data.totalFound} contactos encontrados.`);
+                        const res = await axios.post(`${API_URL}/api/contacts/smart-tag`, { query, labelId, limit });
+                        alert(`✅ ¡Proceso finalizado! Se etiquetaron ${res.data.successCount} contactos.`);
                       } catch (e) { alert("Error en el proceso"); }
                     }}>EJECUTAR ETIQUETADO MASIVO</button>
 

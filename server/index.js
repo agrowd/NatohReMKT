@@ -96,10 +96,10 @@ app.post('/api/contacts/sync', async (req, res) => {
 });
 
 app.post('/api/contacts/smart-tag', async (req, res) => {
-    const { query, labelId } = req.body;
+    const { query, labelId, limit } = req.body;
     if (!query || !labelId) return res.status(400).json({ error: 'Faltan campos' });
     try {
-        const result = await tagContactsByQuery(query, labelId);
+        const result = await tagContactsByQuery(query, labelId, limit || 200);
         res.json(result);
     } catch (err) { res.status(500).json({ error: err.message }); }
 });

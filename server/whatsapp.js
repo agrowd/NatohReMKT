@@ -162,13 +162,13 @@ const syncAllContacts = async () => {
     if (io) io.emit('sync_status', { isSyncing: false, progress: 100 });
 };
 
-const tagContactsByQuery = async (query, labelId) => {
+const tagContactsByQuery = async (query, labelId, limit = 200) => {
     if (!client) throw new Error('Bot desconectado');
     const contacts = await client.getContacts();
     const matches = contacts.filter(c => {
         const name = (c.name || c.pushname || '').toLowerCase();
         return name.includes(query.toLowerCase());
-    });
+    }).slice(0, limit);
 
     let successCount = 0;
     for (const contact of matches) {
