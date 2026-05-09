@@ -172,33 +172,43 @@ const tagContactsByQuery = async (query, labelId, limit = 200) => {
     try {
         const contacts = await client.getContacts();
         console.log(`[TAGGING] Total contactos en agenda: ${contacts.length}`);
-    const matches = contacts.filter(c => {
-        const name = (c.name || c.pushname || '').toLowerCase();
-        return name.includes(query.toLowerCase());
-    }).slice(0, limit);
+        
+        const matches = contacts.filter(c => {
+            const name = (c.name || c.pushname || '').toLowerCase();
+            return name.includes(query.toLowerCase());
+        }).slice(0, limit);
 
-    let successCount = 0;
-    for (const contact of matches) {
-        try {
-            // Asegurar que el contacto existe en nuestra DB antes de etiquetarlo
-            db.prepare(`
-                INSERT OR REPLACE INTO contacts (id, name, number, pushname) 
-                VALUES (?, ?, ?, ?)
-            `).run(contact.id._serialized, contact.name || contact.pushname, contact.number, contact.pushname);
+        console.log(`[TAGGING] Contactos que coinciden: ${matches.length}`);
+        let successCount = 0;
 
-            const chat = await contact.getChat();
-            await chat.changeLabels([labelId]);
-            // Actualizar localmente la relación
-            db.prepare('INSERT OR IGNORE INTO label_members (label_id, contact_id) VALUES (?, ?)').run(labelId, contact.id._serialized);
-            successCount++;
-            if (io) io.emit('tag_progress', { current: successCount, total: matches.length, status: 'running' });
-        } catch (e) {
-            console.error(`Error tagging ${contact.id._serialized}:`, e);
+        for (const contact of matches) {
+            try {
+                // Asegurar que el contacto existe en nuestra DB antes de etiquetarlo
+                db.prepare(`
+                    INSERT OR REPLACE INTO contacts (id, name, number, pushname) 
+                    VALUES (?, ?, ?, ?)
+                `).run(contact.id._serialized, contact.name || contact.pushname, contact.number, contact.pushname);
+
+                const chat = await contact.getChat();
+                await chat.changeLabels([labelId]);
+                
+                // Actualizar localmente la relación
+                db.prepare('INSERT OR IGNORE INTO label_members (label_id, contact_id) VALUES (?, ?)').run(labelId, contact.id._serialized);
+                
+                successCount++;
+                if (io) io.emit('tag_progress', { current: successCount, total: matches.length, status: 'running' });
+            } catch (e) {
+                console.error(`Error tagging ${contact.id._serialized}:`, e);
+            }
         }
+
+        if (io) io.emit('tag_progress', { current: successCount, total: matches.length, status: 'finished' });
+        console.log(`[TAGGING] Finalizado: ${successCount} contactos etiquetados.`);
+        
+    } catch (err) {
+        console.error("[TAGGING] Error fatal:", err);
+        if (io) io.emit('tag_progress', { status: 'error', message: err.message });
     }
-    if (io) io.emit('tag_progress', { current: successCount, total: matches.length, status: 'finished' });
-    console.log(`[TAGGING] Finalizado: ${successCount} contactos etiquetados con éxito.`);
-    return { successCount, totalFound: matches.length };
 };
 
 const sendMessage = async (to, content, media = null) => {
