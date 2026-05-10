@@ -274,14 +274,21 @@ function App() {
                       </div>
                     </div>
                   </div>
-                  <div style={{ marginTop: '1.5rem', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <input type="checkbox" id="auto-remove" checked={config.autoRemove || false} onChange={(e) => setConfig({...config, autoRemove: e.target.checked})} style={{ width: '18px', height: '18px', cursor: 'pointer' }} />
-                      <label htmlFor="auto-remove" style={{ fontSize: '0.85rem', cursor: 'pointer', userSelect: 'none' }}>Quitar de la etiqueta después de enviar (Modo Cola)</label>
+                  <div style={{ marginTop: '1.5rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+                    <div className="styled-input-group">
+                      <label className="input-label"><Icon name="zap" size={14} /> Límite de envíos (Lote)</label>
+                      <input type="number" value={config.batchLimit || ''} onChange={(e) => setConfig({...config, batchLimit: parseInt(e.target.value)})} className="styled-input" placeholder="Ej: 50 (Vacio = Todos)" />
+                      <p style={{ fontSize: '0.6rem', opacity: 0.5, marginTop: '5px' }}>Ideal para enviar de a 50 leads por día.</p>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <input type="checkbox" id="exclude-48h" checked={config.exclude48h || false} onChange={(e) => setConfig({...config, exclude48h: e.target.checked})} style={{ width: '18px', height: '18px', cursor: 'pointer' }} />
-                      <label htmlFor="exclude-48h" style={{ fontSize: '0.85rem', cursor: 'pointer', userSelect: 'none', color: 'var(--primary)' }}><b>Evitar duplicados:</b> No enviar si recibió mensaje en las últimas 48hs</label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', justifyContent: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <input type="checkbox" id="auto-remove" checked={config.autoRemove || false} onChange={(e) => setConfig({...config, autoRemove: e.target.checked})} style={{ width: '18px', height: '18px', cursor: 'pointer' }} />
+                        <label htmlFor="auto-remove" style={{ fontSize: '0.85rem', cursor: 'pointer', userSelect: 'none' }}>Quitar de la etiqueta al enviar</label>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <input type="checkbox" id="exclude-ever" checked={config.excludeEver || false} onChange={(e) => setConfig({...config, excludeEver: e.target.checked})} style={{ width: '18px', height: '18px', cursor: 'pointer' }} />
+                        <label htmlFor="exclude-ever" style={{ fontSize: '0.85rem', cursor: 'pointer', userSelect: 'none', color: 'var(--primary)' }}><b>Memoria Infinita:</b> No enviar si ya se le envió antes</label>
+                      </div>
                     </div>
                   </div>
                 </div>
