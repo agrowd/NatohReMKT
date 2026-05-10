@@ -274,9 +274,15 @@ function App() {
                       </div>
                     </div>
                   </div>
-                  <div style={{ marginTop: '1.5rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <input type="checkbox" id="auto-remove" checked={config.autoRemove || false} onChange={(e) => setConfig({...config, autoRemove: e.target.checked})} style={{ width: '18px', height: '18px', cursor: 'pointer' }} />
-                    <label htmlFor="auto-remove" style={{ fontSize: '0.85rem', cursor: 'pointer', userSelect: 'none' }}>Quitar contacto de la etiqueta después de enviarle mensaje (Modo Cola)</label>
+                  <div style={{ marginTop: '1.5rem', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <input type="checkbox" id="auto-remove" checked={config.autoRemove || false} onChange={(e) => setConfig({...config, autoRemove: e.target.checked})} style={{ width: '18px', height: '18px', cursor: 'pointer' }} />
+                      <label htmlFor="auto-remove" style={{ fontSize: '0.85rem', cursor: 'pointer', userSelect: 'none' }}>Quitar de la etiqueta después de enviar (Modo Cola)</label>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <input type="checkbox" id="exclude-48h" checked={config.exclude48h || false} onChange={(e) => setConfig({...config, exclude48h: e.target.checked})} style={{ width: '18px', height: '18px', cursor: 'pointer' }} />
+                      <label htmlFor="exclude-48h" style={{ fontSize: '0.85rem', cursor: 'pointer', userSelect: 'none', color: 'var(--primary)' }}><b>Evitar duplicados:</b> No enviar si recibió mensaje en las últimas 48hs</label>
+                    </div>
                   </div>
                 </div>
                 

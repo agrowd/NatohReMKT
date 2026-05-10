@@ -163,6 +163,24 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
     let sentCount = 0;
     for (const contact of contacts) {
         try {
+            // Regla de Exclusión de 48 Horas
+            if (config.exclude48h) {
+                const recentSend = db.prepare(`
+                    SELECT COUNT(*) as count 
+                    FROM logs 
+                    WHERE contact_id = ? 
+                    AND status = 'sent' 
+                    AND created_at > datetime('now', '-48 hours')
+                `).get(contact.id._serialized);
+
+                if (recentSend.count > 0) {
+                    console.log(`[ENGINE] Saltando ${contact.id._serialized} (Enviado hace < 48h)`);
+                    db.prepare('INSERT INTO logs (campaign_id, contact_id, status, message) VALUES (?, ?, ?, ?)').run(campaignId, contact.id._serialized, 'skipped', 'Excluido (Enviado en < 48h)');
+                    sentCount++; // Contamos como procesado para la barra de progreso
+                    continue;
+                }
+            }
+
             for (const step of steps) {
                 if (step.type === 'message') {
                     // Seleccionar una variante aleatoria si existe el array de variantes
