@@ -247,7 +247,10 @@ function App() {
                 <h3 className="section-title" style={{ marginTop: '2rem' }}>Etiquetas WA</h3>
                 {labels.map(l => (
                   <div key={l.id} className={`label-item ${selectedLabels.includes(l.id) ? 'active' : ''}`} onClick={() => setSelectedLabels(selectedLabels.includes(l.id) ? selectedLabels.filter(x => x !== l.id) : [...selectedLabels, l.id])}>
-                    {l.name} {selectedLabels.includes(l.id) && '✓'}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                      <span>{l.name}</span>
+                      <span style={{ fontSize: '0.65rem', background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '4px', opacity: 0.6 }}>{l.memberCount || 0}</span>
+                    </div>
                   </div>
                 ))}
               </aside>
@@ -270,6 +273,10 @@ function App() {
                         <input type="number" value={config.maxStepDelay} onChange={(e) => setConfig({...config, maxStepDelay: parseInt(e.target.value)})} className="styled-input" placeholder="MÁX" />
                       </div>
                     </div>
+                  </div>
+                  <div style={{ marginTop: '1.5rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <input type="checkbox" id="auto-remove" checked={config.autoRemove || false} onChange={(e) => setConfig({...config, autoRemove: e.target.checked})} style={{ width: '18px', height: '18px', cursor: 'pointer' }} />
+                    <label htmlFor="auto-remove" style={{ fontSize: '0.85rem', cursor: 'pointer', userSelect: 'none' }}>Quitar contacto de la etiqueta después de enviarle mensaje (Modo Cola)</label>
                   </div>
                 </div>
                 
@@ -417,7 +424,7 @@ function App() {
                       <label className="input-label">Etiqueta a asignar</label>
                       <select className="styled-input" id="smart-tag-label" style={{ appearance: 'auto' }}>
                         <option value="">Seleccioná una etiqueta...</option>
-                        {labels.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                        {labels.map(l => <option key={l.id} value={l.id}>{l.name} ({l.memberCount || 0})</option>)}
                       </select>
                     </div>
 
@@ -457,8 +464,16 @@ function App() {
 
                     <div style={{ marginTop: '2rem', paddingTop: '2rem', borderTop: '1px solid var(--glass-border)' }}>
                       <h4 style={{ marginBottom: '1rem' }}>Sincronización de Base de Datos</h4>
-                      <p style={{ fontSize: '0.8rem', opacity: 0.6, marginBottom: '1.5rem' }}>Esto descarga todos tus contactos a la base de datos local para que el sistema "recuerde" a todos, incluso si no aparecen en los chats recientes.</p>
-                      <button className="btn" style={{ background: 'var(--glass)', color: '#fff', width: '100%' }} onClick={() => axios.post(`${API_URL}/api/contacts/sync`).then(() => alert("Sincronización iniciada en segundo plano"))}>FORZAR SINCRONIZACIÓN COMPLETA</button>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                        <div>
+                          <p style={{ fontSize: '0.7rem', opacity: 0.6, marginBottom: '1rem' }}>Sincroniza nombres y números de todos tus contactos.</p>
+                          <button className="btn" style={{ background: 'var(--glass)', color: '#fff', width: '100%', fontSize: '0.8rem' }} onClick={() => axios.post(`${API_URL}/api/contacts/sync`).then(() => alert("Sincronización de agenda iniciada"))}>SINC. CONTACTOS</button>
+                        </div>
+                        <div>
+                          <p style={{ fontSize: '0.7rem', opacity: 0.6, marginBottom: '1rem' }}>Escanea todas las etiquetas para detectar a TODOS sus miembros.</p>
+                          <button className="btn" style={{ background: 'var(--glass)', color: '#fff', width: '100%', fontSize: '0.8rem' }} onClick={() => axios.post(`${API_URL}/api/contacts/deep-sync`).then(() => alert("Sincronización profunda de etiquetas iniciada"))}>SINC. PROFUNDA ETIQUETAS</button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>

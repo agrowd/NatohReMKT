@@ -5,7 +5,7 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const db = require('./database');
-const { initWhatsApp, startClient, stopClient, logout, getLabels, getContactsByLabel, syncAllContacts, tagContactsByQuery, sendMessage, getStatus } = require('./whatsapp');
+const { initWhatsApp, startClient, stopClient, logout, getLabels, getContactsByLabel, syncAllContacts, deepSyncLabels, tagContactsByQuery, sendMessage, getStatus } = require('./whatsapp');
 
 const app = express();
 const server = http.createServer(app);
@@ -87,12 +87,26 @@ app.delete('/api/flows/:id', (req, res) => {
 
 // --- Labels ---
 app.get('/api/labels', async (req, res) => {
-    try { const labels = await getLabels(); res.json(labels || []); } catch (err) { res.json([]); }
+    try { 
+        const labels = await getLabels(); 
+        const stats = db.prepare('SELECT label_id, COUNT(*) as count FROM label_members GROUP BY label_id').all();
+        
+        const labelsWithStats = labels.map(l => {
+            const stat = stats.find(s => s.label_id === l.id);
+            return { ...l, memberCount: stat ? stat.count : 0 };
+        });
+        
+        res.json(labelsWithStats); 
+    } catch (err) { res.json([]); }
 });
 
 // --- Contacts & Smart Tagging ---
 app.post('/api/contacts/sync', async (req, res) => {
     try { syncAllContacts(); res.json({ message: 'Sync started' }); } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/contacts/deep-sync', async (req, res) => {
+    try { deepSyncLabels(); res.json({ message: 'Deep sync started' }); } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/contacts/smart-tag', async (req, res) => {
@@ -129,7 +143,9 @@ app.post('/api/campaigns', async (req, res) => {
         let allContacts = [];
         for (const labelId of labelIds) {
             const contacts = await getContactsByLabel(labelId);
-            allContacts = [...allContacts, ...contacts];
+            // Inyectamos el labelId original en cada contacto para saber de dónde sacarlo luego
+            const contactsWithLabel = contacts.map(c => ({ ...c, sourceLabelId: labelId }));
+            allContacts = [...allContacts, ...contactsWithLabel];
         }
         const uniqueContacts = Array.from(new Map(allContacts.map(c => [c.id._serialized, c])).values());
         const campaign = db.prepare('INSERT INTO campaigns (flow_id, label, total_count) VALUES (?, ?, ?)')
@@ -170,6 +186,12 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
             if(activeCampaign) activeCampaign.sentCount = sentCount;
             db.prepare('UPDATE campaigns SET sent_count = ? WHERE id = ?').run(sentCount, campaignId);
             db.prepare('INSERT INTO logs (campaign_id, contact_id, status) VALUES (?, ?, ?)').run(campaignId, contact.id._serialized, 'sent');
+            
+            // Lógica de Limpieza (Auto-Remove)
+            if (config.autoRemove && contact.sourceLabelId) {
+                db.prepare('DELETE FROM label_members WHERE label_id = ? AND contact_id = ?').run(contact.sourceLabelId, contact.id._serialized);
+            }
+
             io.emit('campaign_progress', activeCampaign);
             const leadDelay = Math.floor(Math.random() * (config.maxLeadDelay - config.minLeadDelay + 1) + config.minLeadDelay);
             await new Promise(r => setTimeout(r, leadDelay * 1000));

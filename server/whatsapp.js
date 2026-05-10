@@ -142,15 +142,10 @@ const syncAllContacts = async () => {
         let processed = 0;
         
         for (const contact of contacts) {
-            // Guardar contacto básico
             db.prepare(`
                 INSERT OR REPLACE INTO contacts (id, name, number, pushname) 
                 VALUES (?, ?, ?, ?)
             `).run(contact.id._serialized, contact.name || contact.pushname, contact.number, contact.pushname);
-
-            // Intentar obtener etiquetas del chat (esto es lo lento)
-            // Solo lo hacemos para chats que existan o para todos si queremos profundidad
-            // Por ahora solo guardamos el contacto, el mapeo de etiquetas se puede hacer bajo demanda o en un paso extra
             processed++;
             if (processed % 20 === 0 && io) {
                 io.emit('sync_status', { isSyncing: true, progress: Math.floor((processed / contacts.length) * 100) });
@@ -158,6 +153,34 @@ const syncAllContacts = async () => {
         }
     } catch (e) { console.error("Sync Error:", e); }
     
+    isSyncing = false;
+    if (io) io.emit('sync_status', { isSyncing: false, progress: 100 });
+};
+
+const deepSyncLabels = async () => {
+    if (!client || isSyncing) return;
+    isSyncing = true;
+    console.log("[DEEP SYNC] Iniciando sincronización profunda de etiquetas...");
+    if (io) io.emit('sync_status', { isSyncing: true, progress: 0, type: 'labels' });
+
+    try {
+        const labels = await client.getLabels();
+        let labelIndex = 0;
+
+        for (const label of labels) {
+            console.log(`[DEEP SYNC] Procesando etiqueta: ${label.name}`);
+            const chats = await label.getChats();
+            for (const chat of chats) {
+                // Guardar relación
+                db.prepare('INSERT OR IGNORE INTO label_members (label_id, contact_id) VALUES (?, ?)').run(label.id, chat.id._serialized);
+                // También guardar contacto básico si no existe
+                db.prepare('INSERT OR IGNORE INTO contacts (id, name, number) VALUES (?, ?, ?)').run(chat.id._serialized, chat.name, chat.id.user);
+            }
+            labelIndex++;
+            if (io) io.emit('sync_status', { isSyncing: true, progress: Math.floor((labelIndex / labels.length) * 100), type: 'labels' });
+        }
+    } catch (e) { console.error("Deep Sync Error:", e); }
+
     isSyncing = false;
     if (io) io.emit('sync_status', { isSyncing: false, progress: 100 });
 };
@@ -219,4 +242,4 @@ const sendMessage = async (to, content, media = null) => {
     return await client.sendMessage(to, content);
 };
 
-module.exports = { initWhatsApp, startClient, stopClient, logout, getLabels, getContactsByLabel, syncAllContacts, tagContactsByQuery, sendMessage, getStatus };
+module.exports = { initWhatsApp, startClient, stopClient, logout, getLabels, getContactsByLabel, syncAllContacts, deepSyncLabels, tagContactsByQuery, sendMessage, getStatus };
