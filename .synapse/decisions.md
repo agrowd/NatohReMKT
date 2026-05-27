@@ -8,3 +8,5 @@
 | D-06 | **Native Text Variants** | Reemplazo de Spintax manual `{A|B}` por tarjetas de variantes visuales. El motor elige una al azar por contacto. | 🔒 LOCKED |
 | D-07 | **Gestión de Flows** | Permitir guardar, cargar y eliminar flujos para reutilizarlos en distintas campañas | 🟢 ACTIVE |
 | D-08 | **Deep Space v5.0 UI** | Interfaz premium centrada en la experiencia de usuario y claridad en la conexión del bot | 🟢 ACTIVE |
+| D-09 | **Smart Search & Mass Tagging (Escenario B)** | Procesamiento seguro de mensajes por lotes con delays de 70ms y streaming WebSocket en tiempo real para evitar bloqueos y optimizar remarketing. | 🔒 LOCKED |
+

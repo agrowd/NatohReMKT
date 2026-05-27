@@ -242,4 +242,143 @@ const sendMessage = async (to, content, media = null) => {
     return await client.sendMessage(to, content);
 };
 
-module.exports = { initWhatsApp, startClient, stopClient, logout, getLabels, getContactsByLabel, syncAllContacts, deepSyncLabels, tagContactsByQuery, sendMessage, getStatus };
+let activeSearch = null;
+
+const getActiveSearch = () => activeSearch;
+
+const searchMessagesInHistory = async (query, chatLimit = 100, messageLimit = 50) => {
+    if (!client || currentStatus !== 'BOT ONLINE') {
+        throw new Error('El bot de WhatsApp no está conectado o iniciado.');
+    }
+    
+    if (activeSearch && activeSearch.status === 'running') {
+        throw new Error('Ya hay una búsqueda de mensajes en curso.');
+    }
+
+    activeSearch = { status: 'running', query, progress: 0 };
+    console.log(`[SEARCH] Iniciando búsqueda segura de "${query}" | Chats limit: ${chatLimit} | Msg limit: ${messageLimit}`);
+    
+    try {
+        const chats = await client.getChats();
+        const limitNum = chatLimit === 'all' || !chatLimit ? chats.length : Number(chatLimit);
+        const chatsToSearch = chats.slice(0, limitNum);
+        const total = chatsToSearch.length;
+        let current = 0;
+        let matchCount = 0;
+
+        if (io) io.emit('search_status', { status: 'running', query, current, total, matches: 0 });
+
+        for (const chat of chatsToSearch) {
+            if (!activeSearch || activeSearch.status === 'cancelled') {
+                console.log('[SEARCH] Búsqueda cancelada.');
+                if (io) io.emit('search_status', { status: 'cancelled' });
+                return;
+            }
+
+            try {
+                const messages = await chat.fetchMessages({ limit: Number(messageLimit) });
+                const matchingMessages = messages.filter(msg => 
+                    msg.body && msg.body.toLowerCase().includes(query.toLowerCase())
+                );
+
+                if (matchingMessages.length > 0) {
+                    const match = {
+                        id: chat.id._serialized,
+                        name: chat.name,
+                        matchCount: matchingMessages.length,
+                        messages: matchingMessages.map(m => ({
+                            body: m.body,
+                            timestamp: m.timestamp * 1000,
+                            fromMe: m.fromMe,
+                            author: m.author || m.from
+                        }))
+                    };
+                    matchCount++;
+                    if (io) io.emit('search_match', match);
+                }
+            } catch (err) {
+                console.error(`[SEARCH] Error en chat ${chat.name || chat.id._serialized}:`, err.message);
+            }
+
+            current++;
+            if (current % 5 === 0 || current === total) {
+                if (io) io.emit('search_progress', { current, total, matches: matchCount, status: 'running' });
+            }
+
+            // Micro-delay de 70ms para mantener el CPU fresco y evitar rate limiting de WhatsApp
+            await new Promise(r => setTimeout(r, 70));
+        }
+
+        activeSearch = { status: 'finished', query };
+        if (io) io.emit('search_status', { status: 'finished', matches: matchCount });
+        console.log(`[SEARCH] Búsqueda finalizada. Matches: ${matchCount}`);
+    } catch (err) {
+        console.error('[SEARCH] Error fatal:', err);
+        activeSearch = { status: 'error', error: err.message };
+        if (io) io.emit('search_status', { status: 'error', error: err.message });
+    }
+};
+
+const cancelSearch = async () => {
+    if (activeSearch && activeSearch.status === 'running') {
+        activeSearch.status = 'cancelled';
+        console.log('[SEARCH] Solicitada cancelación de búsqueda.');
+        return true;
+    }
+    return false;
+};
+
+const bulkTagChats = async (chatIds, labelId) => {
+    if (!client) throw new Error('El bot está desconectado.');
+    console.log(`[BULK TAG] Asignando etiqueta ${labelId} a ${chatIds.length} chats...`);
+    
+    let successCount = 0;
+    
+    for (const chatId of chatIds) {
+        try {
+            const chat = await client.getChatById(chatId);
+            await chat.changeLabels([labelId]);
+            
+            // Guardar contacto en DB local si no está
+            db.prepare('INSERT OR IGNORE INTO contacts (id, name, number) VALUES (?, ?, ?)').run(
+                chatId,
+                chat.name,
+                chat.id.user
+            );
+            
+            // Guardar relación localmente
+            db.prepare('INSERT OR IGNORE INTO label_members (label_id, contact_id) VALUES (?, ?)').run(
+                labelId,
+                chatId
+            );
+            
+            successCount++;
+            if (io) io.emit('bulk_tag_progress', { current: successCount, total: chatIds.length, status: 'running' });
+        } catch (e) {
+            console.error(`[BULK TAG] Error en chat ${chatId}:`, e.message);
+        }
+        await new Promise(r => setTimeout(r, 80));
+    }
+    
+    if (io) io.emit('bulk_tag_progress', { current: successCount, total: chatIds.length, status: 'finished' });
+    return successCount;
+};
+
+module.exports = { 
+    initWhatsApp, 
+    startClient, 
+    stopClient, 
+    logout, 
+    getLabels, 
+    getContactsByLabel, 
+    syncAllContacts, 
+    deepSyncLabels, 
+    tagContactsByQuery, 
+    sendMessage, 
+    getStatus,
+    searchMessagesInHistory,
+    cancelSearch,
+    bulkTagChats,
+    getActiveSearch
+};
+

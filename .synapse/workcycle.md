@@ -12,9 +12,11 @@
 - [x] Vista de Logs y Analíticas
 - [x] Push a GitHub (agrowd/NatohReMKT)
 
-## Sesión: 2026-05-09 (Actual)
-- [x] Análisis de estado actual y documentación
-- [x] Sincronización de Ariadne Engine (Cortex Ready)
-- [x] Implementación de Smart Tagging (Buscador por nombre + Etiquetado masivo)
-- [x] Implementación de Persistencia de Etiquetas (Base de datos local de contactos)
-- [x] Actualización de UI con nueva pestaña "Smart Tagging"
+## Sesión: 2026-05-27 (Actual)
+- [x] Análisis del Escenario B: Búsqueda de palabras clave en el historial de mensajes de 500+ chats.
+- [x] Diseño de una propuesta premium ("Smart Search & Tagging") para optimizar rendimiento y añadir valor de remarketing.
+- [x] Aprobación del usuario recibida.
+- [x] Implementación de Búsqueda Segura por lotes (Delays de 70ms + streaming Socket.io) en el Backend.
+- [x] Implementación de API de Búsqueda, Cancelación y Bulk Tagging.
+- [x] Desarrollo de la interfaz gráfica "Smart Search" en Vite + React con controles avanzados y barra de progreso.
+- [x] Soporte para respuestas rápidas y etiquetado individual/masivo.

@@ -5,7 +5,8 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const db = require('./database');
-const { initWhatsApp, startClient, stopClient, logout, getLabels, getContactsByLabel, syncAllContacts, deepSyncLabels, tagContactsByQuery, sendMessage, getStatus } = require('./whatsapp');
+const { initWhatsApp, startClient, stopClient, logout, getLabels, getContactsByLabel, syncAllContacts, deepSyncLabels, tagContactsByQuery, sendMessage, getStatus, searchMessagesInHistory, cancelSearch, bulkTagChats, getActiveSearch } = require('./whatsapp');
+
 
 const app = express();
 const server = http.createServer(app);
@@ -54,7 +55,7 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
 
 // --- Bot Control ---
 app.get('/api/whatsapp/status', (req, res) => {
-    res.json({ ...getStatus(), activeCampaign });
+    res.json({ ...getStatus(), activeCampaign, activeSearch: getActiveSearch() });
 });
 app.post('/api/whatsapp/start', async (req, res) => {
     try { await startClient(); res.json({ message: 'OK' }); } catch (err) { res.status(500).json({ error: err.message }); }
@@ -65,6 +66,57 @@ app.post('/api/whatsapp/stop', async (req, res) => {
 app.post('/api/whatsapp/logout', async (req, res) => {
     try { await logout(); res.json({ success: true }); } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
+// --- Message Search & Tagging (Escenario B) ---
+app.post('/api/whatsapp/search-messages', async (req, res) => {
+    const { query, chatLimit, messageLimit } = req.body;
+    if (!query) return res.status(400).json({ error: 'Debe ingresar una palabra clave.' });
+    try {
+        searchMessagesInHistory(query, chatLimit, messageLimit).catch(err => {
+            console.error("Error asíncrono en búsqueda:", err);
+        });
+        res.json({ success: true, message: 'Búsqueda iniciada en segundo plano.' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/whatsapp/cancel-search', async (req, res) => {
+    try {
+        const cancelled = await cancelSearch();
+        res.json({ success: cancelled });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/whatsapp/bulk-tag', async (req, res) => {
+    const { chatIds, labelId } = req.body;
+    if (!chatIds || !Array.isArray(chatIds) || !labelId) {
+        return res.status(400).json({ error: 'Faltan campos obligatorios (chatIds, labelId).' });
+    }
+    try {
+        bulkTagChats(chatIds, labelId).catch(err => {
+            console.error("Error asíncrono en bulk-tag:", err);
+        });
+        res.json({ success: true, message: 'Proceso de etiquetado masivo iniciado.' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/whatsapp/send-direct', async (req, res) => {
+    const { to, content } = req.body;
+    if (!to || !content) return res.status(400).json({ error: 'Faltan campos obligatorios (to, content).' });
+    try {
+        await sendMessage(to, content);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+
 
 // --- Flows ---
 app.get('/api/flows', (req, res) => {

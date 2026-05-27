@@ -21,7 +21,8 @@ const Icon = ({ name, size = 20, color = "currentColor", onClick, style }) => {
     clock: <><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>,
     message: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>,
     clip: <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>,
-    plus: <><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></>
+    plus: <><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></>,
+    search: <><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></>
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" onClick={onClick} style={{ cursor: onClick ? 'pointer' : 'default', ...style }}>
@@ -85,6 +86,20 @@ function App() {
   const [previews, setPreviews] = useState({});
   const fileInputRefs = useRef({});
 
+  // --- ESTADOS DE BÚSQUEDA INTELIGENTE (ESCENARIO B) ---
+  const [searchWord, setSearchWord] = useState('');
+  const [searchChatsLimit, setSearchChatsLimit] = useState(100);
+  const [searchMsgsLimit, setSearchMsgsLimit] = useState(50);
+  const [searchProgress, setSearchProgress] = useState(null);
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchSelectedLabel, setSearchSelectedLabel] = useState('');
+  const [bulkTagProgress, setBulkTagProgress] = useState(null);
+  const [isBulkTagging, setIsBulkTagging] = useState(false);
+  const [expandedChats, setExpandedChats] = useState({});
+  const [quickSendTexts, setQuickSendTexts] = useState({});
+  const [quickTagLabels, setQuickTagLabels] = useState({});
+
   const [selectedLabels, setSelectedLabels] = useState(() => {
     try { return JSON.parse(localStorage.getItem('selectedLabels') || '[]'); } catch(e) { return []; }
   });
@@ -116,6 +131,10 @@ function App() {
     axios.get(`${API_URL}/api/whatsapp/status`).then(res => {
       setStatus(res.data.status); setQr(res.data.qr);
       if (res.data.activeCampaign) setActiveCampaign(res.data.activeCampaign);
+      if (res.data.activeSearch && res.data.activeSearch.status === 'running') {
+        setIsSearching(true);
+        setSearchWord(res.data.activeSearch.query);
+      }
       if (res.data.status === 'BOT ONLINE') fetchLabels();
     }).catch(() => setStatus('ERROR'));
 
@@ -137,9 +156,62 @@ function App() {
         setTagProgress(null);
       }
     });
+
+    socket.on('search_status', (data) => {
+      if (data.status === 'running') {
+        setIsSearching(true);
+        setSearchProgress({ current: data.current, total: data.total, matches: 0 });
+      } else if (data.status === 'finished') {
+        setIsSearching(false);
+        setSearchProgress(null);
+        alert(`🔍 ¡Búsqueda finalizada! Se encontraron ${data.matches} chats con coincidencias.`);
+      } else if (data.status === 'cancelled') {
+        setIsSearching(false);
+        setSearchProgress(null);
+        alert('🔍 Búsqueda cancelada.');
+      } else if (data.status === 'error') {
+        setIsSearching(false);
+        setSearchProgress(null);
+        alert(`❌ Error en búsqueda: ${data.error}`);
+      }
+    });
+
+    socket.on('search_progress', (data) => {
+      setSearchProgress(data);
+    });
+
+    socket.on('search_match', (match) => {
+      setSearchResults(prev => {
+        if (prev.some(x => x.id === match.id)) return prev;
+        return [...prev, match];
+      });
+    });
+
+    socket.on('bulk_tag_progress', (data) => {
+      setBulkTagProgress(data);
+      setIsBulkTagging(data.status === 'running');
+      if (data.status === 'finished') {
+        alert(`🏷️ ¡Etiquetado masivo finalizado! Se procesaron ${data.current} de ${data.total} chats.`);
+        setBulkTagProgress(null);
+        setIsBulkTagging(false);
+        fetchLabels();
+      }
+    });
     
     fetchCampaigns(); fetchFlows();
-    return () => { socket.off('status'); socket.off('qr'); socket.off('ready'); socket.off('labels'); socket.off('campaign_progress'); socket.off('campaign_finished'); socket.off('tag_progress'); };
+    return () => { 
+      socket.off('status'); 
+      socket.off('qr'); 
+      socket.off('ready'); 
+      socket.off('labels'); 
+      socket.off('campaign_progress'); 
+      socket.off('campaign_finished'); 
+      socket.off('tag_progress'); 
+      socket.off('search_status'); 
+      socket.off('search_progress'); 
+      socket.off('search_match'); 
+      socket.off('bulk_tag_progress'); 
+    };
 }, [user]);
 
   const fetchLabels = async () => { try { const res = await axios.get(`${API_URL}/api/labels`); setLabels(res.data || []); } catch (e) {} };
@@ -204,6 +276,7 @@ function App() {
         <div className={`nav-item ${activeTab === 'connection' ? 'active' : ''}`} onClick={() => setActiveTab('connection')} title="Conexión"><Icon name="connection" /></div>
         <div className={`nav-item ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')} title="Historial"><Icon name="history" /></div>
         <div className={`nav-item ${activeTab === 'smart-tag' ? 'active' : ''}`} onClick={() => setActiveTab('smart-tag')} title="Smart Tagging"><Icon name="user" /></div>
+        <div className={`nav-item ${activeTab === 'smart-search' ? 'active' : ''}`} onClick={() => setActiveTab('smart-search')} title="Buscador Mensajes"><Icon name="search" /></div>
         <div className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')} title="Configuración"><Icon name="settings" /></div>
         <div className="nav-item" onClick={handleLogout} style={{ marginTop: 'auto' }} title="Salir"><Icon name="logout" color="#ff4444" /></div>
       </nav>
@@ -488,6 +561,349 @@ function App() {
                         </div>
                       </div>
                     </div>
+                  </div>
+                </div>
+             </div>
+          )}
+
+          {activeTab === 'smart-search' && (
+             <div className="workspace" style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: '1.5rem', width: '100%', height: '100%' }}>
+                <div className="glass-card" style={{ height: 'fit-content' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '1.5rem' }}>
+                    <Icon name="search" size={28} color="var(--primary)" />
+                    <h2 style={{ fontSize: '1.3rem', margin: 0 }}>Smart Message Search</h2>
+                  </div>
+                  <p style={{ opacity: 0.5, fontSize: '0.8rem', marginBottom: '1.5rem' }}>
+                    Busca términos clave dentro del historial de tus chats y aplica etiquetas masivas a quienes lo mencionaron.
+                  </p>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
+                    <div className="styled-input-group">
+                      <label className="input-label">Palabra clave (Término a buscar)</label>
+                      <input 
+                        type="text" 
+                        className="styled-input" 
+                        placeholder="Ej: presupuesto, precio, info..." 
+                        value={searchWord}
+                        onChange={(e) => setSearchWord(e.target.value)}
+                        disabled={isSearching}
+                      />
+                    </div>
+                    
+                    <div className="styled-input-group">
+                      <label className="input-label">Cantidad de Chats a Analizar</label>
+                      <select 
+                        className="styled-input" 
+                        style={{ appearance: 'auto' }}
+                        value={searchChatsLimit}
+                        onChange={(e) => setSearchChatsLimit(e.target.value)}
+                        disabled={isSearching}
+                      >
+                        <option value="50">Últimos 50 chats activos</option>
+                        <option value="100">Últimos 100 chats activos</option>
+                        <option value="250">Últimos 250 chats activos</option>
+                        <option value="500">Últimos 500 chats activos</option>
+                        <option value="all">Escanear TODOS los chats</option>
+                      </select>
+                    </div>
+
+                    <div className="styled-input-group">
+                      <label className="input-label">Profundidad (Mensajes por Chat)</label>
+                      <select 
+                        className="styled-input" 
+                        style={{ appearance: 'auto' }}
+                        value={searchMsgsLimit}
+                        onChange={(e) => setSearchMsgsLimit(e.target.value)}
+                        disabled={isSearching}
+                      >
+                        <option value="20">Últimos 20 mensajes</option>
+                        <option value="50">Últimos 50 mensajes</option>
+                        <option value="100">Últimos 100 mensajes</option>
+                        <option value="200">Últimos 200 mensajes</option>
+                      </select>
+                    </div>
+
+                    <div style={{ marginTop: '0.5rem', display: 'flex', gap: '10px' }}>
+                      {!isSearching ? (
+                        <button 
+                          className="btn btn-primary" 
+                          style={{ flex: 1, height: '48px' }} 
+                          onClick={async () => {
+                            if (!searchWord.trim()) return alert("Ingresá una palabra clave a buscar.");
+                            if (status !== 'BOT ONLINE') return alert("El bot debe estar encendido para buscar.");
+                            setSearchResults([]);
+                            try {
+                              await axios.post(`${API_URL}/api/whatsapp/search-messages`, {
+                                query: searchWord,
+                                chatLimit: searchChatsLimit,
+                                messageLimit: searchMsgsLimit
+                              });
+                              setIsSearching(true);
+                            } catch (e) { alert("Error al iniciar búsqueda."); }
+                          }}
+                        >
+                          🔍 INICIAR BÚSQUEDA
+                        </button>
+                      ) : (
+                        <button 
+                          className="btn" 
+                          style={{ flex: 1, height: '48px', background: 'rgba(255,68,68,0.15)', color: '#ff4444', border: '1px solid rgba(255,68,68,0.3)' }} 
+                          onClick={async () => {
+                            try {
+                              await axios.post(`${API_URL}/api/whatsapp/cancel-search`);
+                            } catch (e) {}
+                          }}
+                        >
+                          ⏹️ CANCELAR BÚSQUEDA
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: '100%', overflowY: 'auto', paddingRight: '0.5rem' }}>
+                  {searchProgress && (
+                    <div className="glass-card" style={{ background: 'rgba(0,255,136,0.02)', border: '1px solid rgba(0,255,136,0.15)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '8px' }}>
+                        <span style={{ fontWeight: 800 }}>Escaneando: {searchProgress.current} / {searchProgress.total} chats</span>
+                        <span style={{ fontWeight: 800, color: 'var(--primary)' }}>{searchProgress.matches || 0} Coincidencias</span>
+                      </div>
+                      <div style={{ height: '6px', background: 'rgba(255,255,255,0.05)', borderRadius: '10px', overflow: 'hidden' }}>
+                        <div 
+                          style={{ 
+                            width: `${(searchProgress.current / searchProgress.total) * 100}%`, 
+                            height: '100%', 
+                            background: 'var(--primary)', 
+                            boxShadow: '0 0 10px var(--primary)', 
+                            transition: 'width 0.3s ease' 
+                          }} 
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {searchResults.length > 0 && (
+                    <div className="glass-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.2rem', gap: '1rem', background: 'rgba(255, 255, 255, 0.03)' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--primary)' }}>🏷️ ETIQUETADO MASIVO</span>
+                        <span style={{ fontSize: '0.7rem', opacity: 0.6 }}>Asigna etiqueta a los {searchResults.length} chats coincidentes</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '10px', flex: 1, maxWidth: '400px', alignItems: 'center' }}>
+                        <select 
+                          className="styled-input" 
+                          style={{ appearance: 'auto', margin: 0, height: '40px' }}
+                          value={searchSelectedLabel}
+                          onChange={(e) => setSearchSelectedLabel(e.target.value)}
+                          disabled={isBulkTagging}
+                        >
+                          <option value="">Selecciona etiqueta...</option>
+                          {labels.map(l => <option key={l.id} value={l.id}>{l.name} ({l.memberCount || 0})</option>)}
+                        </select>
+                        <button 
+                          className="btn btn-primary" 
+                          style={{ height: '40px', padding: '0 20px', whiteSpace: 'nowrap', opacity: searchSelectedLabel ? 1 : 0.5 }}
+                          disabled={!searchSelectedLabel || isBulkTagging}
+                          onClick={async () => {
+                            if (!searchSelectedLabel) return;
+                            if (!confirm(`Se asignará esta etiqueta a ${searchResults.length} chats. ¿Continuar?`)) return;
+                            try {
+                              setIsBulkTagging(true);
+                              await axios.post(`${API_URL}/api/whatsapp/bulk-tag`, {
+                                chatIds: searchResults.map(r => r.id),
+                                labelId: searchSelectedLabel
+                              });
+                            } catch (e) {
+                              setIsBulkTagging(false);
+                              alert("Error al iniciar el etiquetado masivo.");
+                            }
+                          }}
+                        >
+                          {isBulkTagging ? 'ETIQUETANDO...' : 'ETIQUETAR TODOS'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {bulkTagProgress && (
+                    <div className="glass-card" style={{ background: 'rgba(0, 255, 136, 0.05)', border: '1px solid var(--primary)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: '8px' }}>
+                        <span style={{ fontWeight: 800 }}>Etiquetando masivamente: {bulkTagProgress.current} / {bulkTagProgress.total}</span>
+                      </div>
+                      <div style={{ height: '6px', background: 'rgba(255,255,255,0.05)', borderRadius: '10px', overflow: 'hidden' }}>
+                        <div 
+                          style={{ 
+                            width: `${(bulkTagProgress.current / bulkTagProgress.total) * 100}%`, 
+                            height: '100%', 
+                            background: 'var(--primary)', 
+                            boxShadow: '0 0 10px var(--primary)' 
+                          }} 
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
+                    {searchResults.length === 0 ? (
+                      <div style={{ textAlign: 'center', opacity: 0.4, padding: '4rem 1rem' }}>
+                        <Icon name="search" size={50} style={{ opacity: 0.3, marginBottom: '1rem' }} />
+                        <p>{isSearching ? 'Buscando coincidencias en los mensajes...' : 'No hay búsquedas activas. Introduce un término para buscar.'}</p>
+                      </div>
+                    ) : (
+                      searchResults.map((chat) => (
+                        <div 
+                          key={chat.id} 
+                          className="glass-card" 
+                          style={{ 
+                            padding: '1.2rem', 
+                            background: 'rgba(255, 255, 255, 0.02)', 
+                            border: expandedChats[chat.id] ? '1px solid rgba(0, 255, 136, 0.2)' : '1px solid var(--glass-border)',
+                            transition: 'all 0.3s ease'
+                          }}
+                        >
+                          <div 
+                            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+                            onClick={() => setExpandedChats({...expandedChats, [chat.id]: !expandedChats[chat.id]})}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                              <div 
+                                style={{ 
+                                  width: '42px', 
+                                  height: '42px', 
+                                  borderRadius: '50%', 
+                                  background: 'linear-gradient(135deg, var(--primary) 0%, #0099ff 100%)', 
+                                  display: 'flex', 
+                                  alignItems: 'center', 
+                                  justifyContent: 'center', 
+                                  fontWeight: 800,
+                                  fontSize: '0.9rem',
+                                  color: '#fff',
+                                  textShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                                }}
+                              >
+                                {chat.name ? chat.name.slice(0, 2).toUpperCase() : 'WA'}
+                              </div>
+                              <div>
+                                <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0 }}>{chat.name || 'Usuario WhatsApp'}</h3>
+                                <p style={{ fontSize: '0.7rem', opacity: 0.4, margin: '2px 0 0 0' }}>ID: {chat.id}</p>
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                              <span 
+                                style={{ 
+                                  fontSize: '0.75rem', 
+                                  fontWeight: 800, 
+                                  color: 'var(--primary)', 
+                                  background: 'rgba(0, 255, 136, 0.08)', 
+                                  padding: '4px 10px', 
+                                  borderRadius: '20px',
+                                  border: '1px solid rgba(0, 255, 136, 0.15)'
+                                }}
+                              >
+                                {chat.matchCount} {chat.matchCount === 1 ? 'coincidencia' : 'coincidencias'}
+                              </span>
+                              <span style={{ transform: expandedChats[chat.id] ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s', opacity: 0.5 }}>▼</span>
+                            </div>
+                          </div>
+
+                          {expandedChats[chat.id] && (
+                            <div style={{ marginTop: '1.2rem', paddingTop: '1.2rem', borderTop: '1px solid var(--glass-border)' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '1.5rem' }}>
+                                {chat.messages.map((m, idx) => (
+                                  <div 
+                                    key={idx} 
+                                    style={{ 
+                                      background: m.fromMe ? 'rgba(0, 255, 136, 0.03)' : 'rgba(255, 255, 255, 0.01)', 
+                                      padding: '10px 15px', 
+                                      borderRadius: '10px', 
+                                      border: m.fromMe ? '1px solid rgba(0, 255, 136, 0.1)' : '1px solid rgba(255,255,255,0.03)',
+                                      marginLeft: m.fromMe ? '2rem' : '0',
+                                      marginRight: m.fromMe ? '0' : '2rem'
+                                    }}
+                                  >
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', opacity: 0.5, marginBottom: '4px' }}>
+                                      <span style={{ fontWeight: 800 }}>{m.fromMe ? 'Tú' : 'Contacto'}</span>
+                                      <span>{new Date(m.timestamp).toLocaleString()}</span>
+                                    </div>
+                                    <p style={{ margin: 0, fontSize: '0.85rem', whiteSpace: 'pre-wrap', lineHeight: '1.4' }}>{m.body}</p>
+                                  </div>
+                                ))}
+                              </div>
+
+                              <div 
+                                style={{ 
+                                  display: 'grid', 
+                                  gridTemplateColumns: '1fr 220px', 
+                                  gap: '1rem', 
+                                  background: 'rgba(0,0,0,0.1)', 
+                                  padding: '1rem', 
+                                  borderRadius: '12px', 
+                                  border: '1px solid rgba(255,255,255,0.02)' 
+                                }}
+                              >
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                  <input 
+                                    type="text" 
+                                    className="styled-input" 
+                                    placeholder="Redactar respuesta rápida..." 
+                                    style={{ margin: 0, height: '40px', fontSize: '0.8rem' }}
+                                    value={quickSendTexts[chat.id] || ''}
+                                    onChange={(e) => setQuickSendTexts({...quickSendTexts, [chat.id]: e.target.value})}
+                                  />
+                                  <button 
+                                    className="btn btn-primary" 
+                                    style={{ height: '40px', padding: '0 15px', fontSize: '0.8rem' }}
+                                    onClick={async () => {
+                                      const text = quickSendTexts[chat.id];
+                                      if (!text || !text.trim()) return;
+                                      try {
+                                        await axios.post(`${API_URL}/api/whatsapp/send-direct`, {
+                                          to: chat.id,
+                                          content: text
+                                        });
+                                        setQuickSendTexts({...quickSendTexts, [chat.id]: ''});
+                                        alert("✉️ Mensaje enviado con éxito.");
+                                      } catch (e) { alert("Error al enviar mensaje."); }
+                                    }}
+                                  >
+                                    Enviar
+                                  </button>
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                  <select 
+                                    className="styled-input" 
+                                    style={{ appearance: 'auto', margin: 0, height: '40px', fontSize: '0.8rem', flex: 1 }}
+                                    value={quickTagLabels[chat.id] || ''}
+                                    onChange={(e) => setQuickTagLabels({...quickTagLabels, [chat.id]: e.target.value})}
+                                  >
+                                    <option value="">Etiquetar...</option>
+                                    {labels.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                                  </select>
+                                  <button 
+                                    className="btn" 
+                                    style={{ height: '40px', padding: '0 12px', background: 'var(--glass)', border: '1px solid var(--glass-border)', fontSize: '0.8rem' }}
+                                    onClick={async () => {
+                                      const labelId = quickTagLabels[chat.id];
+                                      if (!labelId) return;
+                                      try {
+                                        await axios.post(`${API_URL}/api/whatsapp/bulk-tag`, {
+                                          chatIds: [chat.id],
+                                          labelId: labelId
+                                        });
+                                        alert("🏷️ Contacto etiquetado.");
+                                        fetchLabels();
+                                      } catch (e) { alert("Error al etiquetar."); }
+                                    }}
+                                  >
+                                    OK
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
              </div>
