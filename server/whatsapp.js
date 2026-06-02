@@ -196,7 +196,16 @@ const tagContactsByQuery = async (query, labelId, limit = 200) => {
         const contacts = await client.getContacts();
         console.log(`[TAGGING] Total contactos en agenda: ${contacts.length}`);
         
+        // Obtener IDs de contactos que ya tienen envíos exitosos para excluirlos
+        const sentLogs = db.prepare("SELECT DISTINCT contact_id FROM logs WHERE status = 'sent'").all();
+        const sentContactIds = new Set(sentLogs.map(l => l.contact_id));
+        
         const matches = contacts.filter(c => {
+            // EXCLUIR SI YA SE LE ENVIÓ
+            if (sentContactIds.has(c.id._serialized)) {
+                return false;
+            }
+            
             const name = (c.name || c.pushname || '').toLowerCase();
             return name.includes(query.toLowerCase());
         }).slice(0, limit);
@@ -334,7 +343,15 @@ const bulkTagChats = async (chatIds, labelId) => {
     
     let successCount = 0;
     
+    // Obtener IDs de contactos que ya tienen envíos exitosos para excluirlos
+    const sentLogs = db.prepare("SELECT DISTINCT contact_id FROM logs WHERE status = 'sent'").all();
+    const sentContactIds = new Set(sentLogs.map(l => l.contact_id));
+
     for (const chatId of chatIds) {
+        if (sentContactIds.has(chatId)) {
+            console.log(`[BULK TAG] Saltando ${chatId} porque ya se le envió un mensaje.`);
+            continue;
+        }
         try {
             const chat = await client.getChatById(chatId);
             await chat.changeLabels([labelId]);

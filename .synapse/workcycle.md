@@ -20,3 +20,10 @@
 - [x] Implementación de API de Búsqueda, Cancelación y Bulk Tagging.
 - [x] Desarrollo de la interfaz gráfica "Smart Search" en Vite + React con controles avanzados y barra de progreso.
 - [x] Soporte para respuestas rápidas y etiquetado individual/masivo.
+- [x] Push exitoso a GitHub (main -> main) con todos los cambios implementados y documentados.
+## Sesión: 2026-06-02 (Actual)
+- [x] Análisis del límite de 250 contactos de búsqueda y etiquetas de WhatsApp.
+- [x] Diseño de propuestas alternativas: Etiquetas Virtuales, Auto-Splitting y Chat Harvesting.
+- [x] Presentación de opciones al usuario para su aprobación.
+- [x] Implementación y despliegue del filtro de exclusión de contactos que ya tienen envíos exitosos (`status = 'sent'`) en `tagContactsByQuery` y `bulkTagChats`.
+
