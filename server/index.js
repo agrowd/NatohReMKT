@@ -5,7 +5,8 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const db = require('./database');
-const { initWhatsApp, startClient, stopClient, logout, getLabels, getContactsByLabel, syncAllContacts, deepSyncLabels, tagContactsByQuery, sendMessage, getStatus, searchMessagesInHistory, cancelSearch, bulkTagChats, getActiveSearch } = require('./whatsapp');
+const { initWhatsApp, startClient, stopClient, logout, getLabels, getContactsByLabel, syncAllContacts, deepSyncLabels, tagContactsByQuery, sendMessage, getStatus, searchMessagesInHistory, cancelSearch, bulkTagChats, getActiveSearch, syncLabelsAndMembers } = require('./whatsapp');
+
 
 
 const app = express();
@@ -140,7 +141,8 @@ app.delete('/api/flows/:id', (req, res) => {
 // --- Labels ---
 app.get('/api/labels', async (req, res) => {
     try { 
-        const labels = await getLabels(); 
+        const sync = req.query.sync === 'true';
+        const labels = sync ? await syncLabelsAndMembers() : await getLabels(); 
         const stats = db.prepare('SELECT label_id, COUNT(*) as count FROM label_members GROUP BY label_id').all();
         
         const labelsWithStats = labels.map(l => {

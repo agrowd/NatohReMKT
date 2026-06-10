@@ -381,6 +381,34 @@ const bulkTagChats = async (chatIds, labelId) => {
     return successCount;
 };
 
+const syncLabelsAndMembers = async () => {
+    if (!client || currentStatus !== 'BOT ONLINE') return [];
+    console.log("[LABELS SYNC] Sincronizando etiquetas y miembros desde WhatsApp Web...");
+    try {
+        const labels = await client.getLabels();
+        for (const label of labels) {
+            try {
+                const chats = await label.getChats();
+                
+                // Limpiar miembros locales para esta etiqueta específica y re-insertar
+                db.prepare('DELETE FROM label_members WHERE label_id = ?').run(label.id);
+                
+                for (const chat of chats) {
+                    db.prepare('INSERT OR IGNORE INTO label_members (label_id, contact_id) VALUES (?, ?)').run(label.id, chat.id._serialized);
+                    db.prepare('INSERT OR IGNORE INTO contacts (id, name, number) VALUES (?, ?, ?)').run(chat.id._serialized, chat.name || '', chat.id.user);
+                }
+                console.log(`[LABELS SYNC] Sincronizada etiqueta "${label.name}" con ${chats.length} chats.`);
+            } catch (err) {
+                console.error(`[LABELS SYNC] Error sincronizando etiqueta ${label.name || label.id}:`, err.message);
+            }
+        }
+        return labels;
+    } catch (e) {
+        console.error("[LABELS SYNC] Error fatal en syncLabelsAndMembers:", e.message);
+        return [];
+    }
+};
+
 module.exports = { 
     initWhatsApp, 
     startClient, 
@@ -396,6 +424,7 @@ module.exports = {
     searchMessagesInHistory,
     cancelSearch,
     bulkTagChats,
-    getActiveSearch
+    getActiveSearch,
+    syncLabelsAndMembers
 };
 

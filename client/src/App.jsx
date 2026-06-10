@@ -76,6 +76,7 @@ function App() {
   const [status, setStatus] = useState('VERIFICANDO...');
   const [qr, setQr] = useState(null);
   const [labels, setLabels] = useState([]);
+  const [isSyncingLabels, setIsSyncingLabels] = useState(false);
   const [activeTab, setActiveTab] = useState('builder');
   const [campaigns, setCampaigns] = useState([]);
   const [savedFlows, setSavedFlows] = useState([]);
@@ -214,7 +215,17 @@ function App() {
     };
 }, [user]);
 
-  const fetchLabels = async () => { try { const res = await axios.get(`${API_URL}/api/labels`); setLabels(res.data || []); } catch (e) {} };
+  const fetchLabels = async (sync = false) => { 
+    try { 
+      if (sync) setIsSyncingLabels(true);
+      const res = await axios.get(`${API_URL}/api/labels${sync ? '?sync=true' : ''}`); 
+      setLabels(res.data || []); 
+    } catch (e) {
+      console.error(e);
+    } finally {
+      if (sync) setIsSyncingLabels(false);
+    }
+  };
   const fetchCampaigns = async () => { try { const res = await axios.get(`${API_URL}/api/campaigns`); setCampaigns(res.data || []); } catch (e) {} };
   const fetchFlows = async () => { try { const res = await axios.get(`${API_URL}/api/flows`); setSavedFlows(res.data || []); } catch (e) {} };
 
@@ -302,7 +313,21 @@ function App() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
              <span style={{ fontSize: '0.75rem', opacity: 0.5 }}>{user.username} ({user.role})</span>
-             {status === 'BOT ONLINE' && <button className="btn" onClick={fetchLabels} style={{ background: 'var(--glass)', color: '#fff' }}><Icon name="refresh" size={16}/> Sincronizar</button>}
+              {status === 'BOT ONLINE' && (
+                <button 
+                  className="btn" 
+                  onClick={() => fetchLabels(true)} 
+                  disabled={isSyncingLabels}
+                  style={{ background: 'var(--glass)', color: '#fff', opacity: isSyncingLabels ? 0.7 : 1 }}
+                >
+                  <Icon 
+                    name="refresh" 
+                    size={16} 
+                    className={isSyncingLabels ? "spin-animation" : ""}
+                  /> 
+                  {isSyncingLabels ? 'Sincronizando...' : 'Sincronizar'}
+                </button>
+              )}
           </div>
         </header>
 
