@@ -394,8 +394,8 @@ const syncLabelsAndMembers = async () => {
                 db.prepare('DELETE FROM label_members WHERE label_id = ?').run(label.id);
                 
                 for (const chat of chats) {
-                    db.prepare('INSERT OR IGNORE INTO label_members (label_id, contact_id) VALUES (?, ?)').run(label.id, chat.id._serialized);
                     db.prepare('INSERT OR IGNORE INTO contacts (id, name, number) VALUES (?, ?, ?)').run(chat.id._serialized, chat.name || '', chat.id.user);
+                    db.prepare('INSERT OR IGNORE INTO label_members (label_id, contact_id) VALUES (?, ?)').run(label.id, chat.id._serialized);
                 }
                 console.log(`[LABELS SYNC] Sincronizada etiqueta "${label.name}" con ${chats.length} chats.`);
             } catch (err) {
