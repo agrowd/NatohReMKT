@@ -383,23 +383,33 @@ const bulkTagChats = async (chatIds, labelId) => {
 
 const syncLabelsAndMembers = async () => {
     if (!client || currentStatus !== 'BOT ONLINE') return [];
-    console.log("[LABELS SYNC] Sincronizando etiquetas y miembros desde WhatsApp Web...");
+    console.log("[LABELS SYNC] Iniciando sincronización profunda...");
     try {
+        // 1. Obtener todos los chats de la sesión para forzar la carga de metadatos en la memoria del navegador
+        const allChats = await client.getChats();
+        console.log(`[LABELS SYNC] Sincronizados ${allChats.length} chats en memoria del navegador.`);
+
         const labels = await client.getLabels();
         for (const label of labels) {
             try {
                 const chats = await label.getChats();
+                console.log(`[LABELS SYNC] Leídos ${chats.length} chats para etiqueta "${label.name}".`);
                 
-                // Limpiar miembros locales para esta etiqueta específica y re-insertar
-                db.prepare('DELETE FROM label_members WHERE label_id = ?').run(label.id);
-                
-                for (const chat of chats) {
-                    db.prepare('INSERT OR IGNORE INTO contacts (id, name, number) VALUES (?, ?, ?)').run(chat.id._serialized, chat.name || '', chat.id.user);
-                    db.prepare('INSERT OR IGNORE INTO label_members (label_id, contact_id) VALUES (?, ?)').run(label.id, chat.id._serialized);
+                // 2. Solo limpiamos y re-insertamos si la API devolvió al menos 1 miembro.
+                // Esto previene que una falla temporal de carga en el navegador borre la caché de la DB.
+                if (chats && chats.length > 0) {
+                    db.prepare('DELETE FROM label_members WHERE label_id = ?').run(label.id);
+                    
+                    for (const chat of chats) {
+                        db.prepare('INSERT OR IGNORE INTO contacts (id, name, number) VALUES (?, ?, ?)').run(chat.id._serialized, chat.name || '', chat.id.user);
+                        db.prepare('INSERT OR IGNORE INTO label_members (label_id, contact_id) VALUES (?, ?)').run(label.id, chat.id._serialized);
+                    }
+                    console.log(`[LABELS SYNC] Guardados ${chats.length} miembros para etiqueta "${label.name}" en SQLite.`);
+                } else {
+                    console.log(`[LABELS SYNC] Manteniendo caché local para "${label.name}" (API reportó 0 miembros).`);
                 }
-                console.log(`[LABELS SYNC] Sincronizada etiqueta "${label.name}" con ${chats.length} chats.`);
             } catch (err) {
-                console.error(`[LABELS SYNC] Error sincronizando etiqueta ${label.name || label.id}:`, err.message);
+                console.error(`[LABELS SYNC] Error en etiqueta "${label.name || label.id}":`, err.message);
             }
         }
         return labels;
