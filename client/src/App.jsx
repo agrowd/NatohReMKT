@@ -104,6 +104,8 @@ function App() {
   const [selectedLabels, setSelectedLabels] = useState(() => {
     try { return JSON.parse(localStorage.getItem('selectedLabels') || '[]'); } catch(e) { return []; }
   });
+  const [virtualLists, setVirtualLists] = useState([]);
+  const [selectedVirtualLists, setSelectedVirtualLists] = useState([]);
   
   // Nuevo Estado Inicial: Soporta 'variants' en lugar de un solo 'content'
   const [flowSteps, setFlowSteps] = useState(() => {
@@ -199,7 +201,7 @@ function App() {
       }
     });
     
-    fetchCampaigns(); fetchFlows();
+    fetchCampaigns(); fetchFlows(); fetchVirtualLists();
     return () => { 
       socket.off('status'); 
       socket.off('qr'); 
@@ -226,6 +228,12 @@ function App() {
       if (sync) setIsSyncingLabels(false);
     }
   };
+  const fetchVirtualLists = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/api/virtual-lists`);
+      setVirtualLists(res.data || []);
+    } catch (e) {}
+  };
   const fetchCampaigns = async () => { try { const res = await axios.get(`${API_URL}/api/campaigns`); setCampaigns(res.data || []); } catch (e) {} };
   const fetchFlows = async () => { try { const res = await axios.get(`${API_URL}/api/flows`); setSavedFlows(res.data || []); } catch (e) {} };
 
@@ -244,11 +252,16 @@ function App() {
 
   const startCampaign = async () => {
     if (status !== 'BOT ONLINE') return alert('Bot desconectado');
-    if (selectedLabels.length === 0) return alert('Seleccioná etiquetas');
+    if (selectedLabels.length === 0 && selectedVirtualLists.length === 0) return alert('Seleccioná al menos una etiqueta nativa o una lista virtual');
     try {
       const pSteps = prepareSteps(flowSteps); // Variantes directas al motor
       const flowRes = await axios.post(`${API_URL}/api/flows`, { name: `Camp. ${new Date().toLocaleTimeString()}`, steps: pSteps });
-      await axios.post(`${API_URL}/api/campaigns`, { flowId: flowRes.data.id, labelIds: selectedLabels, config });
+      await axios.post(`${API_URL}/api/campaigns`, { 
+        flowId: flowRes.data.id, 
+        labelIds: selectedLabels, 
+        virtualListIds: selectedVirtualLists, 
+        config 
+      });
       setShowModal(true);
       alert('🚀 ¡Campaña Iniciada! El bot está procesando los contactos en segundo plano.');
     } catch (e) { alert("Error al lanzar"); }
@@ -348,6 +361,48 @@ function App() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
                       <span>{l.name}</span>
                       <span style={{ fontSize: '0.65rem', background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '4px', opacity: 0.6 }}>{l.memberCount || 0}</span>
+                    </div>
+                  </div>
+                ))}
+
+                <h3 className="section-title" style={{ marginTop: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Listas Virtuales</span>
+                  <button className="btn" style={{ fontSize: '0.65rem', padding: '2px 6px', background: 'rgba(255,255,255,0.05)', border: 'none', color: '#fff', cursor: 'pointer' }} onClick={async () => {
+                    const name = prompt("Nombre de la nueva lista virtual:");
+                    if (!name) return;
+                    try {
+                      await axios.post(`${API_URL}/api/virtual-lists`, { name });
+                      fetchVirtualLists();
+                    } catch (e) {
+                      alert("Error al crear lista virtual");
+                    }
+                  }}>
+                    + NUEVA
+                  </button>
+                </h3>
+                {virtualLists.map(vl => (
+                  <div key={vl.id} className={`label-item ${selectedVirtualLists.includes(vl.id) ? 'active' : ''}`} style={{ borderColor: vl.color || 'var(--primary)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                      <span onClick={() => setSelectedVirtualLists(selectedVirtualLists.includes(vl.id) ? selectedVirtualLists.filter(x => x !== vl.id) : [...selectedVirtualLists, vl.id])} style={{ flex: 1, cursor: 'pointer' }}>
+                        📁 {vl.name}
+                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '0.65rem', background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '4px', opacity: 0.6 }}>{vl.memberCount || 0}</span>
+                        {user.role === 'admin' && (
+                          <Icon name="trash" size={12} onClick={async (e) => {
+                            e.stopPropagation();
+                            if (confirm(`¿Borrar la lista virtual "${vl.name}"?`)) {
+                              try {
+                                await axios.delete(`${API_URL}/api/virtual-lists/${vl.id}`);
+                                setSelectedVirtualLists(selectedVirtualLists.filter(x => x !== vl.id));
+                                fetchVirtualLists();
+                              } catch(e) {
+                                alert("Error al borrar lista virtual");
+                              }
+                            }
+                          }} style={{ opacity: 0.3, cursor: 'pointer' }} />
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -574,6 +629,73 @@ function App() {
                     )}
 
                     <div style={{ marginTop: '2rem', paddingTop: '2rem', borderTop: '1px solid var(--glass-border)' }}>
+                      <h4 style={{ marginBottom: '1rem' }}>📁 Importar Agenda Telefónica (.vcf / .csv)</h4>
+                      <p style={{ fontSize: '0.75rem', opacity: 0.6, marginBottom: '1.5rem' }}>
+                        Cargá tu agenda exportada desde Google Contacts, iCloud o tu celular para poder contactar a clientes sin chats previos.
+                      </p>
+                      
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '12px', border: '1px solid var(--glass-border)' }}>
+                        <div className="styled-input-group" style={{ margin: 0 }}>
+                          <label className="input-label" style={{ fontSize: '0.7rem' }}>Asociar a Lista Virtual (Opcional)</label>
+                          <select className="styled-input" id="import-vcf-list" style={{ appearance: 'auto', padding: '8px 12px', height: '40px', fontSize: '0.8rem' }}>
+                            <option value="">No asociar a ninguna lista...</option>
+                            {virtualLists.map(vl => <option key={vl.id} value={vl.id}>{vl.name}</option>)}
+                          </select>
+                        </div>
+                        
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                          <input 
+                            type="file" 
+                            accept=".vcf,.csv" 
+                            id="vcf-file-input" 
+                            style={{ display: 'none' }} 
+                            onChange={async (e) => {
+                              const file = e.target.files[0];
+                              if (!file) return;
+                              
+                              const listId = document.getElementById('import-vcf-list').value;
+                              const formData = new FormData();
+                              formData.append('file', file);
+                              if (listId) {
+                                formData.append('listId', listId);
+                              }
+                              
+                              try {
+                                const btn = document.getElementById('btn-import-agenda');
+                                btn.innerText = "IMPORTANDO...";
+                                btn.disabled = true;
+                                
+                                const res = await axios.post(`${API_URL}/api/contacts/import-vcf`, formData);
+                                alert(`✅ Importación exitosa:\n• Contactos leídos: ${res.data.parsedCount}\n• Teléfonos importados: ${res.data.insertedPhoneNumbers}\n• Asociados a lista: ${res.data.associatedCount}`);
+                                
+                                fetchVirtualLists();
+                                fetchLabels();
+                                e.target.value = "";
+                              } catch(err) {
+                                alert(`❌ Error al importar: ${err.response?.data?.error || err.message}`);
+                              } finally {
+                                const btn = document.getElementById('btn-import-agenda');
+                                btn.innerText = "SELECCIONAR Y SUBIR ARCHIVO (.vcf, .csv)";
+                                btn.disabled = false;
+                              }
+                            }}
+                          />
+                          <button 
+                            id="btn-import-agenda"
+                            className="btn btn-primary" 
+                            style={{ width: '100%', height: '40px', fontSize: '0.8rem' }}
+                            onClick={() => document.getElementById('vcf-file-input').click()}
+                          >
+                            SELECCIONAR Y SUBIR ARCHIVO (.vcf, .csv)
+                          </button>
+                        </div>
+                        <p style={{ fontSize: '0.65rem', opacity: 0.5, textAlign: 'center', margin: 0 }}>
+                          Soporta formatos vCard estándar (VCF) y exportaciones de contactos CSV.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: '2rem', paddingTop: '2rem', borderTop: '1px solid var(--glass-border)' }}>
                       <h4 style={{ marginBottom: '1rem' }}>Sincronización de Base de Datos</h4>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                         <div>
@@ -590,6 +712,7 @@ function App() {
                 </div>
              </div>
           )}
+
 
           {activeTab === 'smart-search' && (
              <div className="workspace" style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: '1.5rem', width: '100%', height: '100%' }}>

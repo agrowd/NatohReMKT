@@ -71,6 +71,27 @@ db.prepare(`
     )
 `).run();
 
+// NUEVA: Tabla de Listas Virtuales locales
+db.prepare(`
+    CREATE TABLE IF NOT EXISTS virtual_lists (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        color TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+`).run();
+
+// NUEVA: Miembros de las Listas Virtuales locales (Relación Muchos a Muchos)
+db.prepare(`
+    CREATE TABLE IF NOT EXISTS virtual_list_members (
+        list_id INTEGER,
+        contact_id TEXT,
+        PRIMARY KEY (list_id, contact_id),
+        FOREIGN KEY (list_id) REFERENCES virtual_lists(id) ON DELETE CASCADE,
+        FOREIGN KEY (contact_id) REFERENCES contacts(id)
+    )
+`).run();
+
 // Insertar usuarios iniciales si no existen
 const insertUser = db.prepare('INSERT OR IGNORE INTO users (username, password, role) VALUES (?, ?, ?)');
 insertUser.run('natoh', 'Federyco88!', 'admin');
