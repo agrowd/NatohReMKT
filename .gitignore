@@ -3,7 +3,7 @@ node_modules/
 dist/
 
 # Local data
-server/database.sqlite
+server/natoh.db
 server/sessions/
 server/uploads/
 
