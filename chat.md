@@ -75,3 +75,29 @@ Implementar "Listas Virtuales" y un importador de archivos de contactos VCF (.vc
 ### Verificación y Pruebas
 - Frontend compilado exitosamente sin errores de sintaxis en Vite.
 - Backend verificado con syntax checker de Node.js.
+
+## Historial de Conversación - 2026-06-17
+
+### Requerimiento
+El usuario reporta que el importador VCF estaba mal distribuido al estar metido dentro de la pestaña de Smart Tagging. Solicita mover el importador de archivos VCF/CSV a un apartado/pestaña específica e independiente, agregando la funcionalidad de crear la lista virtual directamente al importar, aplicar filtros por palabra clave en el nombre (ej: "luz pulsada") y realizar un chequeo de exclusión contra la base de datos para no añadir a la lista a contactos que ya hayan recibido mensajes en campañas anteriores.
+
+### Análisis y Diseño
+1. **Reorganización de UI**: Se quitó la sección de importación de la pestaña "Smart Tagging" y se creó una pestaña dedicada "Importador VCF/CSV" (Icono de clip).
+2. **Importación Dinámica y Filtros**:
+   - El formulario de importación ahora permite escribir el nombre de una nueva Lista Virtual para ser creada en el acto y asociarle los contactos importados.
+   - Añadido un campo opcional para ingresar una palabra clave de filtrado (ej: "luz pulsada"). Solo los contactos cuyo nombre contenga dicho texto serán asignados a la lista.
+   - Añadido control visual ("Exclusión Inteligente") para consultar las bitácoras históricas en la tabla `logs` (donde `status = 'sent'`) y descartar a contactos que ya fueron procesados con anterioridad.
+
+### Implementación
+1. **Backend (`server/index.js`)**:
+   - Actualizada la API `POST /api/contacts/import-vcf` para recibir y procesar los parámetros `listName`, `filterQuery` y `excludeSent`.
+   - Incorporada la lógica de creación automática de Listas Virtuales, filtrado case-insensitive de nombres de contacto, y exclusión por consulta cruzada a los registros de campañas.
+2. **Frontend (`client/src/App.jsx`)**:
+   - Agregada la pestaña `vcf-import` a la barra de navegación lateral.
+   - Diseñado el panel completo del importador con controles estructurados para subida de archivos, nombre de lista a crear/asociar, filtro de coincidencia por palabra y exclusión anti-spam.
+   - Integradas las llamadas de red axios a los nuevos parámetros del backend.
+
+### Verificación y Pruebas
+- Verificada la compilación exitosa del frontend client localmente (`dist/assets/index...js` y `css`).
+- Verificado el backend index.js sin fallos de parser de Node.
+

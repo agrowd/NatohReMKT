@@ -17,4 +17,10 @@
 - Unified Campaign launcher combining native WA labels and virtual lists with de-duplication.
 - Frontend sidebar listing for Virtual Lists and management actions.
 - Drag-and-drop file upload interface for importing agenda files.
-
+## [0.4.0] - 2026-06-17
+### Added
+- Standalone navigation tab "Importador VCF/CSV" (Icon: paperclip) for clean user experience.
+- Automated creation of new Virtual Lists directly from the VCF/CSV import form.
+- Direct keyword/name filtering (e.g. "luz pulsada") during the VCF import process.
+- Database logs check during import to automatically exclude contacts that already received messages.
+- Cleaned up duplicate file upload interfaces from other tabs.

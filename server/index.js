@@ -390,7 +390,10 @@ app.post('/api/virtual-lists/bulk-add', (req, res) => {
 
 app.post('/api/contacts/import-vcf', upload.single('file'), (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No se subió ningún archivo' });
-    const { listId } = req.body;
+    let { listId, listName, filterQuery, excludeSent } = req.body;
+    
+    // Convert excludeSent to boolean (default to true)
+    const shouldExcludeSent = excludeSent !== 'false';
     
     try {
         const filePath = req.file.path;
@@ -409,6 +412,26 @@ app.post('/api/contacts/import-vcf', upload.single('file'), (req, res) => {
         
         fs.unlinkSync(filePath);
         
+        // 1. Create virtual list on the fly if listName is provided
+        if (listName && listName.trim()) {
+            listName = listName.trim();
+            // Try to find if list already exists
+            let existingList = db.prepare('SELECT id FROM virtual_lists WHERE name = ?').get(listName);
+            if (existingList) {
+                listId = existingList.id;
+            } else {
+                const info = db.prepare('INSERT INTO virtual_lists (name, color) VALUES (?, ?)').run(listName, '#4f46e5');
+                listId = info.lastInsertRowid;
+            }
+        }
+        
+        // 2. Get set of already messaged contacts if shouldExcludeSent is true
+        const sentContactIds = new Set();
+        if (shouldExcludeSent) {
+            const sentLogs = db.prepare("SELECT DISTINCT contact_id FROM logs WHERE status = 'sent'").all();
+            sentLogs.forEach(l => sentContactIds.add(l.contact_id));
+        }
+        
         const insertContact = db.prepare(`
             INSERT OR REPLACE INTO contacts (id, name, number, pushname) 
             VALUES (?, ?, ?, ?)
@@ -424,12 +447,28 @@ app.post('/api/contacts/import-vcf', upload.single('file'), (req, res) => {
         
         let totalContacts = 0;
         let associatedCount = 0;
+        let skippedCount = 0;
         
         const transaction = db.transaction(() => {
             for (const c of contactsParsed) {
+                // Apply name filter query if provided
+                if (filterQuery && filterQuery.trim()) {
+                    const q = filterQuery.toLowerCase().trim();
+                    const name = (c.name || '').toLowerCase();
+                    if (!name.includes(q)) {
+                        continue;
+                    }
+                }
+                
                 for (const rawNum of c.numbers) {
                     const normalized = normalizePhoneNumber(rawNum);
                     if (!normalized) continue;
+                    
+                    // Exclude if already sent a message
+                    if (shouldExcludeSent && sentContactIds.has(normalized)) {
+                        skippedCount++;
+                        continue;
+                    }
                     
                     const cleanNum = normalized.split('@')[0];
                     insertContact.run(normalized, c.name, cleanNum, '');
@@ -449,7 +488,10 @@ app.post('/api/contacts/import-vcf', upload.single('file'), (req, res) => {
             success: true,
             parsedCount: contactsParsed.length,
             insertedPhoneNumbers: totalContacts,
-            associatedCount: listId ? associatedCount : 0
+            associatedCount: listId ? associatedCount : 0,
+            skippedCount,
+            listId,
+            listName
         });
     } catch (err) {
         console.error("Import Error:", err);

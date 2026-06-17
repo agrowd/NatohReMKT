@@ -85,6 +85,7 @@ function App() {
   const [expandedCampaign, setExpandedCampaign] = useState(null);
   const [tagProgress, setTagProgress] = useState(null);
   const [previews, setPreviews] = useState({});
+  const [importFile, setImportFile] = useState(null);
   const fileInputRefs = useRef({});
 
   // --- ESTADOS DE BÚSQUEDA INTELIGENTE (ESCENARIO B) ---
@@ -300,6 +301,7 @@ function App() {
         <div className={`nav-item ${activeTab === 'connection' ? 'active' : ''}`} onClick={() => setActiveTab('connection')} title="Conexión"><Icon name="connection" /></div>
         <div className={`nav-item ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')} title="Historial"><Icon name="history" /></div>
         <div className={`nav-item ${activeTab === 'smart-tag' ? 'active' : ''}`} onClick={() => setActiveTab('smart-tag')} title="Smart Tagging"><Icon name="user" /></div>
+        <div className={`nav-item ${activeTab === 'vcf-import' ? 'active' : ''}`} onClick={() => setActiveTab('vcf-import')} title="Importador VCF/CSV"><Icon name="clip" /></div>
         <div className={`nav-item ${activeTab === 'smart-search' ? 'active' : ''}`} onClick={() => setActiveTab('smart-search')} title="Buscador Mensajes"><Icon name="search" /></div>
         <div className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')} title="Configuración"><Icon name="settings" /></div>
         <div className="nav-item" onClick={handleLogout} style={{ marginTop: 'auto' }} title="Salir"><Icon name="logout" color="#ff4444" /></div>
@@ -628,72 +630,6 @@ function App() {
                       </div>
                     )}
 
-                    <div style={{ marginTop: '2rem', paddingTop: '2rem', borderTop: '1px solid var(--glass-border)' }}>
-                      <h4 style={{ marginBottom: '1rem' }}>📁 Importar Agenda Telefónica (.vcf / .csv)</h4>
-                      <p style={{ fontSize: '0.75rem', opacity: 0.6, marginBottom: '1.5rem' }}>
-                        Cargá tu agenda exportada desde Google Contacts, iCloud o tu celular para poder contactar a clientes sin chats previos.
-                      </p>
-                      
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '12px', border: '1px solid var(--glass-border)' }}>
-                        <div className="styled-input-group" style={{ margin: 0 }}>
-                          <label className="input-label" style={{ fontSize: '0.7rem' }}>Asociar a Lista Virtual (Opcional)</label>
-                          <select className="styled-input" id="import-vcf-list" style={{ appearance: 'auto', padding: '8px 12px', height: '40px', fontSize: '0.8rem' }}>
-                            <option value="">No asociar a ninguna lista...</option>
-                            {virtualLists.map(vl => <option key={vl.id} value={vl.id}>{vl.name}</option>)}
-                          </select>
-                        </div>
-                        
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                          <input 
-                            type="file" 
-                            accept=".vcf,.csv" 
-                            id="vcf-file-input" 
-                            style={{ display: 'none' }} 
-                            onChange={async (e) => {
-                              const file = e.target.files[0];
-                              if (!file) return;
-                              
-                              const listId = document.getElementById('import-vcf-list').value;
-                              const formData = new FormData();
-                              formData.append('file', file);
-                              if (listId) {
-                                formData.append('listId', listId);
-                              }
-                              
-                              try {
-                                const btn = document.getElementById('btn-import-agenda');
-                                btn.innerText = "IMPORTANDO...";
-                                btn.disabled = true;
-                                
-                                const res = await axios.post(`${API_URL}/api/contacts/import-vcf`, formData);
-                                alert(`✅ Importación exitosa:\n• Contactos leídos: ${res.data.parsedCount}\n• Teléfonos importados: ${res.data.insertedPhoneNumbers}\n• Asociados a lista: ${res.data.associatedCount}`);
-                                
-                                fetchVirtualLists();
-                                fetchLabels();
-                                e.target.value = "";
-                              } catch(err) {
-                                alert(`❌ Error al importar: ${err.response?.data?.error || err.message}`);
-                              } finally {
-                                const btn = document.getElementById('btn-import-agenda');
-                                btn.innerText = "SELECCIONAR Y SUBIR ARCHIVO (.vcf, .csv)";
-                                btn.disabled = false;
-                              }
-                            }}
-                          />
-                          <button 
-                            id="btn-import-agenda"
-                            className="btn btn-primary" 
-                            style={{ width: '100%', height: '40px', fontSize: '0.8rem' }}
-                            onClick={() => document.getElementById('vcf-file-input').click()}
-                          >
-                            SELECCIONAR Y SUBIR ARCHIVO (.vcf, .csv)
-                          </button>
-                        </div>
-                        <p style={{ fontSize: '0.65rem', opacity: 0.5, textAlign: 'center', margin: 0 }}>
-                          Soporta formatos vCard estándar (VCF) y exportaciones de contactos CSV.
-                        </p>
-                      </div>
-                    </div>
 
                     <div style={{ marginTop: '2rem', paddingTop: '2rem', borderTop: '1px solid var(--glass-border)' }}>
                       <h4 style={{ marginBottom: '1rem' }}>Sincronización de Base de Datos</h4>
@@ -1052,6 +988,140 @@ function App() {
                         </div>
                       ))
                     )}
+                  </div>
+                </div>
+             </div>
+          )}
+
+          {activeTab === 'vcf-import' && (
+             <div className="workspace">
+                <div className="glass-card" style={{ maxWidth: '650px', width: '100%' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '1.5rem' }}>
+                    <Icon name="clip" size={40} color="var(--primary)" />
+                    <h2 style={{ fontSize: '1.6rem', margin: 0 }}>Importador de Agenda (VCF / CSV)</h2>
+                  </div>
+                  <p style={{ opacity: 0.7, fontSize: '0.9rem', marginBottom: '2.5rem', lineHeight: '1.6' }}>
+                    Carga el archivo de contactos de tu celular para segmentarlo y crear listas de remarketing virtuales. El sistema normaliza automáticamente los teléfonos y previene envíos duplicados.
+                  </p>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                    
+                    {/* Paso 1: Seleccionar Archivo */}
+                    <div style={{ background: 'rgba(255,255,255,0.02)', padding: '2rem', borderRadius: '15px', border: '2px dashed var(--glass-border)', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                      <span style={{ fontSize: '1.1rem', fontWeight: 700 }}>1. Sube tu archivo de agenda</span>
+                      <p style={{ fontSize: '0.75rem', opacity: 0.5, margin: '0 0 10px 0' }}>Formatos soportados: vCard (.vcf) o Google Contacts (.csv)</p>
+                      <input 
+                        type="file" 
+                        accept=".vcf,.csv" 
+                        id="vcf-tab-file-input" 
+                        style={{ display: 'none' }} 
+                        onChange={(e) => {
+                          const file = e.target.files[0];
+                          if (file) setImportFile(file);
+                        }}
+                      />
+                      <button 
+                        className="btn btn-secondary" 
+                        style={{ padding: '12px 24px', fontSize: '0.85rem' }}
+                        onClick={() => document.getElementById('vcf-tab-file-input').click()}
+                      >
+                        {importFile ? '📂 CAMBIAR ARCHIVO' : '📁 SELECCIONAR ARCHIVO'}
+                      </button>
+                      {importFile && (
+                        <div style={{ marginTop: '8px', fontSize: '0.85rem', color: 'var(--primary)', fontWeight: 'bold', background: 'rgba(0,255,136,0.05)', padding: '6px 15px', borderRadius: '20px' }}>
+                          ✓ {importFile.name} ({Math.round(importFile.size / 1024)} KB)
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Paso 2: Configurar la Lista Virtual */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', background: 'rgba(255,255,255,0.01)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--glass-border)' }}>
+                      <div className="styled-input-group" style={{ margin: 0 }}>
+                        <label className="input-label" style={{ fontWeight: 700 }}>2a. Crear NUEVA Lista Virtual</label>
+                        <input type="text" className="styled-input" id="vcf-tab-list-name" placeholder="Ej: Clientes Luz Pulsada" style={{ background: 'rgba(0,0,0,0.2)' }} />
+                      </div>
+                      
+                      <div className="styled-input-group" style={{ margin: 0 }}>
+                        <label className="input-label" style={{ fontWeight: 700 }}>2b. O usar una lista existente</label>
+                        <select className="styled-input" id="vcf-tab-list-id" style={{ appearance: 'auto', background: 'rgba(0,0,0,0.2)' }}>
+                          <option value="">-- Seleccionar lista --</option>
+                          {virtualLists.map(vl => <option key={vl.id} value={vl.id}>{vl.name}</option>)}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Paso 3: Filtrar por Nombre */}
+                    <div className="styled-input-group" style={{ background: 'rgba(255,255,255,0.01)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--glass-border)' }}>
+                      <label className="input-label" style={{ fontWeight: 700 }}>3. Filtrar por palabra clave en el Nombre (Opcional)</label>
+                      <input type="text" className="styled-input" id="vcf-tab-filter" placeholder="Ej: luz pulsada" style={{ background: 'rgba(0,0,0,0.2)' }} />
+                      <p style={{ fontSize: '0.65rem', opacity: 0.5, marginTop: '8px', lineHeight: '1.4' }}>
+                        💡 <strong>Ejemplo de uso:</strong> Si tu archivo contiene a todos tus contactos pero solo quieres agrupar a los que dicen "Luz Pulsada", escribe "luz pulsada" aquí. Solo se importarán esos contactos. Dejar en blanco para importar todo.
+                      </p>
+                    </div>
+
+                    {/* Paso 4: Control Anti-Spam */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(0, 255, 136, 0.03)', padding: '1.2rem', borderRadius: '12px', border: '1px solid rgba(0, 255, 136, 0.15)' }}>
+                      <input type="checkbox" id="vcf-tab-exclude-sent" defaultChecked style={{ width: '20px', height: '20px', cursor: 'pointer' }} />
+                      <label htmlFor="vcf-tab-exclude-sent" style={{ fontSize: '0.85rem', cursor: 'pointer', userSelect: 'none', lineHeight: '1.4' }}>
+                        <strong>Exclusión Inteligente de Envío (Doble Check)</strong><br/>
+                        <span style={{ opacity: 0.6, fontSize: '0.75rem' }}>No agregar a la lista a ningún cliente que ya haya recibido mensajes en campañas anteriores.</span>
+                      </label>
+                    </div>
+
+                    {/* Botón de Ejecución */}
+                    <button 
+                      id="btn-vcf-import-run"
+                      className="btn btn-primary" 
+                      style={{ height: '55px', fontSize: '1rem', fontWeight: 800, letterSpacing: '0.5px' }}
+                      onClick={async () => {
+                        if (!importFile) return alert("Por favor, selecciona un archivo (.vcf o .csv) primero.");
+                        
+                        const listName = document.getElementById('vcf-tab-list-name').value;
+                        const listId = document.getElementById('vcf-tab-list-id').value;
+                        const filterQuery = document.getElementById('vcf-tab-filter').value;
+                        const excludeSent = document.getElementById('vcf-tab-exclude-sent').checked;
+                        
+                        if (!listName && !listId) {
+                          return alert("Por favor, ingresa el nombre para la nueva lista o selecciona una lista existente.");
+                        }
+                        
+                        const formData = new FormData();
+                        formData.append('file', importFile);
+                        if (listName) formData.append('listName', listName);
+                        if (listId) formData.append('listId', listId);
+                        if (filterQuery) formData.append('filterQuery', filterQuery);
+                        formData.append('excludeSent', excludeSent ? 'true' : 'false');
+                        
+                        try {
+                          const btn = document.getElementById('btn-vcf-import-run');
+                          btn.innerText = "IMPORTANDO Y FILTRANDO CONTACTOS...";
+                          btn.disabled = true;
+                          
+                          const res = await axios.post(`${API_URL}/api/contacts/import-vcf`, formData);
+                          
+                          alert(`🎉 ¡Proceso Finalizado con éxito!\n\n` +
+                                `• Total contactos en el archivo: ${res.data.parsedCount}\n` +
+                                `• Contactos agregados al sistema: ${res.data.insertedPhoneNumbers}\n` +
+                                `• Asociados a la lista "${res.data.listName || 'seleccionada'}": ${res.data.associatedCount}\n` +
+                                `• Omitidos por mensaje ya enviado (Anti-Spam): ${res.data.skippedCount}`);
+                          
+                          fetchVirtualLists();
+                          setImportFile(null);
+                          document.getElementById('vcf-tab-file-input').value = "";
+                          document.getElementById('vcf-tab-list-name').value = "";
+                          document.getElementById('vcf-tab-filter').value = "";
+                        } catch(err) {
+                          alert(`❌ Error al importar: ${err.response?.data?.error || err.message}`);
+                        } finally {
+                          const btn = document.getElementById('btn-vcf-import-run');
+                          btn.innerText = "IMPORTAR Y CREAR LISTA";
+                          btn.disabled = false;
+                        }
+                      }}
+                    >
+                      IMPORTAR Y CREAR LISTA
+                    </button>
+                    
                   </div>
                 </div>
              </div>
