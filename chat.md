@@ -101,3 +101,26 @@ El usuario reporta que el importador VCF estaba mal distribuido al estar metido 
 - Verificada la compilación exitosa del frontend client localmente (`dist/assets/index...js` y `css`).
 - Verificado el backend index.js sin fallos de parser de Node.
 
+## Historial de Conversación - 2026-06-29
+
+### Requerimiento
+Agregar un botón en la interfaz de usuario para poder detener/cancelar de inmediato una campaña de envío masivo activa.
+
+### Análisis y Diseño
+1. **Endpoint de Cancelación**: Se añadió una API en el backend para marcar la campaña activa en ejecución como `cancelled`.
+2. **Interrupción Inmediata en el Engine**:
+   - Para evitar que el backend siga procesando envíos y esperando retrasos largos (que pueden llegar a 90 segundos entre contactos), se diseñó la función `delayWithCancelCheck` que divide el tiempo de espera en microintervalos de 500ms.
+   - Si la campaña se marca como `cancelled`, la función despierta de inmediato al bucle y aborta la campaña de forma segura, actualizando su estado a `cancelled` en SQLite y notificando al frontend por Sockets.
+3. **Botón en Interfaz Web**: Se colocó un botón de parada ("DETENER") de color rojo en la barra superior junto al monitor de progreso de la campaña, solicitando confirmación del usuario para prevenir clics accidentales.
+
+### Implementación
+1. **Backend (`server/index.js`)**:
+   - Creado endpoint `POST /api/campaigns/stop` que actualiza el estado en SQLite y marca la campaña activa como cancelada.
+   - Creada función `delayWithCancelCheck` y agregados los checks de salida en el motor de campañas.
+2. **Frontend (`client/src/App.jsx`)**:
+   - Modificado el panel de progreso en el top bar para incluir un botón "DETENER" con llamada POST y confirmación.
+
+### Verificación y Pruebas
+- Compilado del frontend exitoso y verificación de sintaxis de Node OK.
+
+

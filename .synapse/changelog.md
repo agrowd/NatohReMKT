@@ -24,3 +24,8 @@
 - Direct keyword/name filtering (e.g. "luz pulsada") during the VCF import process.
 - Database logs check during import to automatically exclude contacts that already received messages.
 - Cleaned up duplicate file upload interfaces from other tabs.
+## [0.5.0] - 2026-06-29
+### Added
+- Backend route `POST /api/campaigns/stop` to safely cancel active campaigns.
+- Interval check helper `delayWithCancelCheck` to allow immediate loop exits during delays.
+- "DETENER" button inside the top bar progress tracker in the React frontend.

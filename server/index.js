@@ -636,17 +636,45 @@ app.post('/api/campaigns', async (req, res) => {
         const campaign = db.prepare('INSERT INTO campaigns (flow_id, label, total_count) VALUES (?, ?, ?)')
             .run(flowId, campaignLabel, uniqueContacts.length);
         const campaignId = campaign.lastInsertRowid;
-        activeCampaign = { campaignId, flowName: flow.name, sentCount: 0, total: uniqueContacts.length };
+        activeCampaign = { campaignId, flowName: flow.name, sentCount: 0, total: uniqueContacts.length, status: 'running' };
         startCampaignProcess(campaignId, uniqueContacts, JSON.parse(flow.steps), config);
         res.json({ campaignId, contactCount: uniqueContacts.length });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+app.post('/api/campaigns/stop', (req, res) => {
+    if (activeCampaign) {
+        const campaignId = activeCampaign.campaignId;
+        db.prepare("UPDATE campaigns SET status = 'cancelled' WHERE id = ?").run(campaignId);
+        activeCampaign.status = 'cancelled';
+        console.log(`[ENGINE] Deteniendo campaña ${campaignId} por solicitud del usuario.`);
+        res.json({ success: true, message: 'Campaña deteniéndose...' });
+    } else {
+        res.status(400).json({ error: 'No hay ninguna campaña activa en este momento.' });
+    }
+});
+
 // --- Engine ---
+async function delayWithCancelCheck(ms) {
+    const checkInterval = 500; // check every 500ms
+    let elapsed = 0;
+    while (elapsed < ms) {
+        if (activeCampaign && activeCampaign.status === 'cancelled') {
+            return true; // was cancelled
+        }
+        await new Promise(r => setTimeout(r, checkInterval));
+        elapsed += checkInterval;
+    }
+    return false;
+}
+
 async function startCampaignProcess(campaignId, contacts, steps, config) {
     db.prepare('UPDATE campaigns SET status = ? WHERE id = ?').run('running', campaignId);
     let sentCount = 0;
     for (const contact of contacts) {
+        if (activeCampaign && activeCampaign.status === 'cancelled') {
+            break;
+        }
         try {
             // Regla de Exclusión de 48 Horas o Permanente
             if (config.exclude48h || config.excludeEver) {
@@ -672,7 +700,12 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
                 break; 
             }
 
+            let wasStepCancelled = false;
             for (const step of steps) {
+                if (activeCampaign && activeCampaign.status === 'cancelled') {
+                    wasStepCancelled = true;
+                    break;
+                }
                 if (step.type === 'message') {
                     // Seleccionar una variante aleatoria si existe el array de variantes
                     let baseContent = step.content || "";
@@ -686,11 +719,22 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
                     const resolvedContent = resolveSpintax(baseContent); // Mantenemos spintax por si alguien lo escribe manual
                     await sendMessage(contact.id._serialized, resolvedContent, step.mediaPath);
                     const stepDelay = Math.floor(Math.random() * (config.maxStepDelay - config.minStepDelay + 1) + config.minStepDelay);
-                    await new Promise(r => setTimeout(r, stepDelay * 1000));
+                    if (await delayWithCancelCheck(stepDelay * 1000)) {
+                        wasStepCancelled = true;
+                        break;
+                    }
                 } else if (step.type === 'delay') {
-                    await new Promise(r => setTimeout(r, step.duration * 1000));
+                    if (await delayWithCancelCheck(step.duration * 1000)) {
+                        wasStepCancelled = true;
+                        break;
+                    }
                 }
             }
+            
+            if (wasStepCancelled) {
+                break;
+            }
+            
             sentCount++;
             if(activeCampaign) activeCampaign.sentCount = sentCount;
             db.prepare('UPDATE campaigns SET sent_count = ? WHERE id = ?').run(sentCount, campaignId);
@@ -707,15 +751,23 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
             }
 
             io.emit('campaign_progress', activeCampaign);
+            
+            if (activeCampaign && activeCampaign.status === 'cancelled') {
+                break;
+            }
             const leadDelay = Math.floor(Math.random() * (config.maxLeadDelay - config.minLeadDelay + 1) + config.minLeadDelay);
-            await new Promise(r => setTimeout(r, leadDelay * 1000));
+            if (await delayWithCancelCheck(leadDelay * 1000)) {
+                break;
+            }
         } catch (err) {
             db.prepare('INSERT INTO logs (campaign_id, contact_id, status, message) VALUES (?, ?, ?, ?)').run(campaignId, contact.id._serialized, 'error', err.message);
         }
     }
-    db.prepare('UPDATE campaigns SET status = ? WHERE id = ?').run('completed', campaignId);
+    
+    const finalStatus = (activeCampaign && activeCampaign.status === 'cancelled') ? 'cancelled' : 'completed';
+    db.prepare('UPDATE campaigns SET status = ? WHERE id = ?').run(finalStatus, campaignId);
     activeCampaign = null;
-    io.emit('campaign_finished', { campaignId });
+    io.emit('campaign_finished', { campaignId, status: finalStatus });
 }
 
 function resolveSpintax(text) {

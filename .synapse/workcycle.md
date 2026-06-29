@@ -40,9 +40,14 @@
 - [x] Actualización de interfaz React agregando gestión de Listas Virtuales (creación/eliminación) en el Sidebar.
 - [x] Integración del panel de carga e importación de archivos de agenda (.vcf / .csv) dentro del área de Smart Tagging.
 
-## Sesión: 2026-06-17 (Actual)
+## Sesión: 2026-06-17
 - [x] Solución de conflicto de merge con `server/natoh.db` en el VPS (agregado a `.gitignore` y quitado del trackeo de git).
 - [x] Creación de una pestaña dedicada "Importador VCF/CSV" (Icono de clip) separando el importador de la pestaña de Smart Tagging.
 - [x] Modificación del endpoint `/api/contacts/import-vcf` para admitir creación automática de listas por nombre (`listName`), filtro por palabra clave en el nombre (`filterQuery`) y exclusión de contactos ya contactados (`excludeSent`).
 - [x] Diseño de UI premium en React para el importador con barra de arrastre, entrada para nombre de lista, entrada de filtro opcional por palabra clave, y control visual de exclusión anti-spam.
+
+## Sesión: 2026-06-29 (Actual)
+- [x] Desarrollo del endpoint `POST /api/campaigns/stop` en backend para permitir detener campañas activas.
+- [x] Implementación de la función `delayWithCancelCheck` en el engine backend para abortar de inmediato las demoras entre mensajes y envíos.
+- [x] Integración de un botón "DETENER" de color rojo con ventana de confirmación en la UI React (top bar) junto a la barra de progreso de envíos.
 

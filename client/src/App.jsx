@@ -316,13 +316,31 @@ function App() {
               <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>{status}</span>
             </div>
             {activeCampaign && (
-              <div style={{ flex: 1, maxWidth: '350px', marginLeft: '2rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', marginBottom: '4px' }}>
-                  <span style={{ fontWeight: 800 }}>⚡ {activeCampaign.sentCount} / {activeCampaign.total}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flex: 1, maxWidth: '450px', marginLeft: '2rem' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', marginBottom: '4px' }}>
+                    <span style={{ fontWeight: 800 }}>⚡ {activeCampaign.sentCount} / {activeCampaign.total}</span>
+                  </div>
+                  <div style={{ height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '10px', overflow: 'hidden' }}>
+                    <div style={{ width: `${(activeCampaign.sentCount / activeCampaign.total) * 100}%`, height: '100%', background: 'var(--primary)', boxShadow: '0 0 10px var(--primary)' }} />
+                  </div>
                 </div>
-                <div style={{ height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '10px', overflow: 'hidden' }}>
-                  <div style={{ width: `${(activeCampaign.sentCount / activeCampaign.total) * 100}%`, height: '100%', background: 'var(--primary)', boxShadow: '0 0 10px var(--primary)' }} />
-                </div>
+                <button 
+                  className="btn" 
+                  style={{ background: '#ff4444', color: '#fff', fontSize: '0.7rem', padding: '4px 10px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontWeight: 800, height: 'auto', lineHeight: 'normal' }}
+                  onClick={async () => {
+                    if (confirm('¿Seguro que deseas detener la campaña activa? No se enviarán más mensajes.')) {
+                      try {
+                        await axios.post(`${API_URL}/api/campaigns/stop`);
+                        alert('Campaña detenida.');
+                      } catch (e) {
+                        alert('Error al detener la campaña.');
+                      }
+                    }
+                  }}
+                >
+                  DETENER
+                </button>
               </div>
             )}
           </div>
