@@ -46,8 +46,15 @@
 - [x] Modificación del endpoint `/api/contacts/import-vcf` para admitir creación automática de listas por nombre (`listName`), filtro por palabra clave en el nombre (`filterQuery`) y exclusión de contactos ya contactados (`excludeSent`).
 - [x] Diseño de UI premium en React para el importador con barra de arrastre, entrada para nombre de lista, entrada de filtro opcional por palabra clave, y control visual de exclusión anti-spam.
 
-## Sesión: 2026-06-29 (Actual)
+## Sesión: 2026-06-29
 - [x] Desarrollo del endpoint `POST /api/campaigns/stop` en backend para permitir detener campañas activas.
 - [x] Implementación de la función `delayWithCancelCheck` en el engine backend para abortar de inmediato las demoras entre mensajes y envíos.
 - [x] Integración de un botón "DETENER" de color rojo con ventana de confirmación en la UI React (top bar) junto a la barra de progreso de envíos.
+
+## Sesión: 2026-07-08 (Actual)
+- [x] Creación del script de backend `server/import-special-list.js` para parsear, filtrar y agrupar contactos del archivo VCF pesado `contacts2.vcf` directamente en el servidor Debian.
+- [x] Filtro combinado de palabras clave ("luz" o "hifu") en una única lista virtual local llamada "Luz o Hifu".
+- [x] Cruce y exclusión automática en base de datos local SQLite para ignorar contactos a los que ya se les haya enviado mensajes con éxito (`status = 'sent'`).
+- [x] Actualización de `.gitignore` para omitir y no subir el archivo `contacts2.vcf` pesado con datos reales al repositorio público.
+
 
