@@ -7,6 +7,10 @@ server/natoh.db
 server/sessions/
 server/uploads/
 
+# Contact files
+contacts2.vcf
+
+
 # Environment
 .env
 .env.local
