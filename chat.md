@@ -123,4 +123,28 @@ Agregar un botón en la interfaz de usuario para poder detener/cancelar de inmed
 ### Verificación y Pruebas
 - Compilado del frontend exitoso y verificación de sintaxis de Node OK.
 
+## Historial de Conversación - 2026-07-08
+
+### Requerimiento
+El usuario coloca un archivo de contactos VCF pesado llamado `contacts2.vcf` (con más de 9400 contactos) en la raíz del proyecto. Solicita crear un proceso que analice este archivo, busque todos los contactos cuyos nombres contengan "luz" o "hifu", los agrupe en una única lista virtual local que pueda ser seleccionada desde la interfaz web, y descarte automáticamente a todos los contactos a los que ya se les haya enviado algún mensaje en campañas previas (cruzando los datos con los logs históricos de la base de datos).
+
+### Análisis y Diseño
+1. **Script de Importación Directo (`server/import-special-list.js`)**:
+   - Para evitar retardos, caídas por límite de subida HTTP o bloqueos de red en el navegador con un archivo VCF tan pesado (1.7 MB), la mejor vía es un script de Node que corra directo en la consola del servidor Debian.
+   - El script abre `contacts2.vcf`, unfoldea las líneas, decodifica texto Quoted-Printable (típico de contactos exportados de celulares) y normaliza los teléfonos celulares argentinos eliminando el prefijo local "15" y forzando el código de país internacional "549".
+2. **Criterios de Filtro y Exclusión**:
+   - El script filtra de forma case-insensitive aquellos nombres que tengan el término `luz` o `hifu`.
+   - Lee todos los registros con estado `sent` en la tabla `logs` de SQLite y los carga en un `Set` para una consulta de exclusión O(1) instantánea.
+   - Crea/asocia la lista virtual local "Luz o Hifu" y vincula los miembros aptos en la base de datos.
+3. **Privacidad y Limpieza Git**:
+   - Se añadió la regla `contacts2.vcf` en `.gitignore` para prevenir subir la agenda privada del cliente de forma pública en GitHub.
+
+### Implementación
+1. **Script de Consola (`server/import-special-list.js`)**:
+   - Programado el flujo de lectura de archivos, parser de vCards, cruce en base de datos SQLite y resúmenes estadísticos en consola.
+
+### Verificación y Pruebas
+- Se ejecutó el script localmente con éxito, procesando los 9425 contactos del archivo VCF en menos de 7 segundos y detectando 3493 coincidencias.
+
+
 
