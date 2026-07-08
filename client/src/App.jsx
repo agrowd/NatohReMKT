@@ -458,9 +458,19 @@ function App() {
                         <input type="checkbox" id="auto-remove" checked={config.autoRemove || false} onChange={(e) => setConfig({...config, autoRemove: e.target.checked})} style={{ width: '18px', height: '18px', cursor: 'pointer' }} />
                         <label htmlFor="auto-remove" style={{ fontSize: '0.85rem', cursor: 'pointer', userSelect: 'none' }}>Quitar de la etiqueta al enviar</label>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <input type="checkbox" id="exclude-ever" checked={config.excludeEver || false} onChange={(e) => setConfig({...config, excludeEver: e.target.checked})} style={{ width: '18px', height: '18px', cursor: 'pointer' }} />
-                        <label htmlFor="exclude-ever" style={{ fontSize: '0.85rem', cursor: 'pointer', userSelect: 'none', color: 'var(--primary)' }}><b>Memoria Infinita:</b> No enviar si ya se le envió antes</label>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <label htmlFor="exclusion-period" style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--primary)' }}>Filtro de Exclusión Anti-Spam:</label>
+                        <select 
+                          id="exclusion-period"
+                          value={config.exclusionPeriod === undefined ? (config.excludeEver ? 'ever' : 'none') : config.exclusionPeriod}
+                          onChange={(e) => setConfig({...config, exclusionPeriod: e.target.value, excludeEver: e.target.value === 'ever'})}
+                          style={{ background: 'var(--glass)', color: '#fff', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', padding: '6px 10px', fontSize: '0.8rem', cursor: 'pointer', outline: 'none' }}
+                        >
+                          <option value="none">No excluir (Enviar siempre)</option>
+                          <option value="48h">Evitar si se envió en las últimas 48 horas</option>
+                          <option value="7d">Evitar si se envió en los últimos 7 días (1 semana)</option>
+                          <option value="ever">Memoria Infinita (Evitar si se envió alguna vez)</option>
+                        </select>
                       </div>
                     </div>
                   </div>

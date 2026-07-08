@@ -147,6 +147,11 @@ El usuario coloca un archivo de contactos VCF pesado llamado `contacts2.vcf` (co
 - Se ejecutó el script localmente con éxito, procesando los 9425 contactos del archivo VCF en menos de 7 segundos y detectando 3493 coincidencias.
 - **Diagnóstico del error "No LID for users":** Los logs en el servidor indicaron fallos masivos debido a la falta de mapeo de LIDs en la API interna de WhatsApp Web.
 - **Resolución:** Se actualizó la dependencia de `whatsapp-web.js` en `package.json` para apuntar directamente a su rama oficial de desarrollo en GitHub (`github:wwebjs/whatsapp-web.js#main`), asegurando compatibilidad con los cambios recientes implementados por Meta en WhatsApp.
+- **Lógica de exclusión de 7 días y control UI:**
+  - Se actualizó el script `server/import-special-list.js` y la API de importación de contactos en `server/index.js` para filtrar el historial de logs a los últimos 7 días (`created_at > datetime('now', '-7 days')`), permitiendo importar contactos que no hayan recibido mensajes en la última semana.
+  - Se integró soporte en el motor de campañas de la API para admitir la propiedad `config.exclusionPeriod` (valores: `none`, `48h`, `7d`, `ever`).
+  - Se reemplazó el checkbox de "Memoria Infinita" en `client/src/App.jsx` por un menú desplegable de selección de período de exclusión anti-spam para mayor versatilidad.
+
 
 
 

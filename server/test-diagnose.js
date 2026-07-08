@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const db = require('./database');
 
 function decodeQuotedPrintable(str) {
     if (!str) return "";
@@ -126,76 +125,48 @@ function parseVCF(vcfContent) {
 
 function run() {
     const vcfPath = path.join(__dirname, '..', 'contacts2.vcf');
-    if (!fs.existsSync(vcfPath)) {
-        console.error(`Error: No se encontró el archivo contacts2.vcf en ${vcfPath}`);
-        process.exit(1);
-    }
-    
-    console.log(`Leyendo archivo: ${vcfPath}...`);
     const fileContent = fs.readFileSync(vcfPath, 'utf-8');
     const parsedContacts = parseVCF(fileContent);
-    console.log(`Se leyeron ${parsedContacts.length} contactos del archivo VCF.`);
-    
-    const listName = "Luz o Hifu";
-    let listId;
-    const existingList = db.prepare('SELECT id FROM virtual_lists WHERE name = ?').get(listName);
-    if (existingList) {
-        listId = existingList.id;
-        console.log(`Usando lista virtual existente "${listName}" (ID: ${listId})`);
-    } else {
-        const info = db.prepare('INSERT INTO virtual_lists (name, color) VALUES (?, ?)').run(listName, '#8b5cf6');
-        listId = info.lastInsertRowid;
-        console.log(`Creada nueva lista virtual "${listName}" (ID: ${listId})`);
-    }
-    
-    const sentLogs = db.prepare("SELECT DISTINCT contact_id FROM logs WHERE status = 'sent' AND created_at > datetime('now', '-7 days')").all();
-    const sentContactIds = new Set(sentLogs.map(l => l.contact_id));
-    console.log(`Se encontraron ${sentContactIds.size} contactos ya contactados en los últimos 7 días (excluidos).`);
-    
-    const insertContact = db.prepare(`
-        INSERT OR REPLACE INTO contacts (id, name, number, pushname) 
-        VALUES (?, ?, ?, ?)
-    `);
-    
-    const insertMember = db.prepare(`
-        INSERT OR IGNORE INTO virtual_list_members (list_id, contact_id) 
-        VALUES (?, ?)
-    `);
     
     let totalMatched = 0;
-    let totalImported = 0;
-    let totalExcluded = 0;
+    const matchedStats = [];
+    const uniqueNumbers = new Set();
+    const allNormalizedNumbers = [];
     
-    const transaction = db.transaction(() => {
-        for (const c of parsedContacts) {
-            const name = (c.name || '').toLowerCase();
-            if (name.includes('luz') || name.includes('hifu')) {
-                totalMatched++;
-                for (const rawNum of c.numbers) {
-                    const normalized = normalizePhoneNumber(rawNum);
-                    if (!normalized) continue;
-                    
-                    if (sentContactIds.has(normalized)) {
-                        totalExcluded++;
-                        continue;
-                    }
-                    
-                    const cleanNum = normalized.split('@')[0];
-                    insertContact.run(normalized, c.name, cleanNum, '');
-                    insertMember.run(listId, normalized);
-                    totalImported++;
+    for (const c of parsedContacts) {
+        const name = (c.name || '').toLowerCase();
+        if (name.includes('luz') || name.includes('hifu')) {
+            totalMatched++;
+            for (const rawNum of c.numbers) {
+                const normalized = normalizePhoneNumber(rawNum);
+                if (normalized) {
+                    uniqueNumbers.add(normalized);
+                    allNormalizedNumbers.push(normalized);
                 }
+                matchedStats.push({
+                    name: c.name,
+                    rawNum,
+                    normalized
+                });
             }
         }
+    }
+    
+    console.log(`Matching contacts: ${totalMatched}`);
+    console.log(`Total phone numbers in matching contacts: ${matchedStats.length}`);
+    console.log(`Unique normalized numbers in matching contacts: ${uniqueNumbers.size}`);
+    
+    // Check duplicates count
+    const numCounts = {};
+    allNormalizedNumbers.forEach(n => {
+        numCounts[n] = (numCounts[n] || 0) + 1;
     });
     
-    transaction();
+    const duplicateNumbers = Object.entries(numCounts).filter(([n, count]) => count > 1);
+    console.log(`Duplicate numbers count (same number in multiple contacts/TELs): ${duplicateNumbers.length}`);
     
-    console.log(`\n--- RESUMEN DE IMPORTACIÓN ---`);
-    console.log(`• Contactos con "luz" o "hifu" en el nombre: ${totalMatched}`);
-    console.log(`• Contactos importados y asociados a la lista "${listName}": ${totalImported}`);
-    console.log(`• Contactos omitidos (ya se les había enviado): ${totalExcluded}`);
-    console.log(`\nImportación completada con éxito.`);
+    console.log("\nSample of first 15 matching contacts:");
+    console.log(JSON.stringify(matchedStats.slice(0, 15), null, 2));
 }
 
 run();

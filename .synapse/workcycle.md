@@ -58,5 +58,7 @@
 - [x] Actualización de `.gitignore` para omitir y no subir el archivo `contacts2.vcf` pesado con datos reales al repositorio público.
 - [x] Creación del script `server/view-campaign-logs.js` para diagnosticar en caliente por qué finalizan rápido las campañas.
 - [x] Actualización de la dependencia whatsapp-web.js a github:wwebjs/whatsapp-web.js#main en package.json para corregir el error crítico 'No LID for users' provocado por los cambios recientes en WhatsApp Web.
+- [x] Cambio de la lógica de exclusión para usar un filtro de 7 días (1 semana) en lugar de exclusión permanente por defecto, tanto en importaciones de archivos de agenda como en el motor de campañas.
+- [x] Rediseño de la interfaz de configuración de campañas en React para reemplazar el checkbox de 'Memoria Infinita' por un selector dropdown que permite escoger el período de exclusión (No excluir, 48 horas, 7 días, Permanente).
 
 

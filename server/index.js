@@ -428,7 +428,7 @@ app.post('/api/contacts/import-vcf', upload.single('file'), (req, res) => {
         // 2. Get set of already messaged contacts if shouldExcludeSent is true
         const sentContactIds = new Set();
         if (shouldExcludeSent) {
-            const sentLogs = db.prepare("SELECT DISTINCT contact_id FROM logs WHERE status = 'sent'").all();
+            const sentLogs = db.prepare("SELECT DISTINCT contact_id FROM logs WHERE status = 'sent' AND created_at > datetime('now', '-7 days')").all();
             sentLogs.forEach(l => sentContactIds.add(l.contact_id));
         }
         
@@ -677,8 +677,33 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
         }
         try {
             // Regla de Exclusión de 48 Horas o Permanente
-            if (config.exclude48h || config.excludeEver) {
-                const timeFilter = config.excludeEver ? "" : "AND created_at > datetime('now', '-48 hours')";
+            // Regla de Exclusión Anti-Spam
+            let shouldExclude = false;
+            let timeFilter = "";
+            
+            if (config.exclusionPeriod) {
+                if (config.exclusionPeriod === '48h') {
+                    shouldExclude = true;
+                    timeFilter = "AND created_at > datetime('now', '-48 hours')";
+                } else if (config.exclusionPeriod === '7d') {
+                    shouldExclude = true;
+                    timeFilter = "AND created_at > datetime('now', '-7 days')";
+                } else if (config.exclusionPeriod === 'ever') {
+                    shouldExclude = true;
+                    timeFilter = "";
+                }
+            } else {
+                // Retrocompatibilidad
+                if (config.excludeEver) {
+                    shouldExclude = true;
+                    timeFilter = "";
+                } else if (config.exclude48h) {
+                    shouldExclude = true;
+                    timeFilter = "AND created_at > datetime('now', '-48 hours')";
+                }
+            }
+            
+            if (shouldExclude) {
                 const recentSend = db.prepare(`
                     SELECT COUNT(*) as count 
                     FROM logs 
@@ -688,8 +713,8 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
                 `).get(contact.id._serialized);
 
                 if (recentSend.count > 0) {
-                    console.log(`[ENGINE] Saltando ${contact.id._serialized} (Ya enviado)`);
-                    db.prepare('INSERT INTO logs (campaign_id, contact_id, status, message) VALUES (?, ?, ?, ?)').run(campaignId, contact.id._serialized, 'skipped', 'Excluido (Ya enviado)');
+                    console.log(`[ENGINE] Saltando ${contact.id._serialized} (Ya enviado recientemente)`);
+                    db.prepare('INSERT INTO logs (campaign_id, contact_id, status, message) VALUES (?, ?, ?, ?)').run(campaignId, contact.id._serialized, 'skipped', 'Excluido (Ya enviado recientemente)');
                     continue; // No lo contamos para el límite de lote si fue saltado
                 }
             }
