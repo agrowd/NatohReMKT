@@ -57,5 +57,6 @@
 - [x] Cruce y exclusión automática en base de datos local SQLite para ignorar contactos a los que ya se les haya enviado mensajes con éxito (`status = 'sent'`).
 - [x] Actualización de `.gitignore` para omitir y no subir el archivo `contacts2.vcf` pesado con datos reales al repositorio público.
 - [x] Creación del script `server/view-campaign-logs.js` para diagnosticar en caliente por qué finalizan rápido las campañas.
+- [x] Actualización de la dependencia whatsapp-web.js a github:wwebjs/whatsapp-web.js#main en package.json para corregir el error crítico 'No LID for users' provocado por los cambios recientes en WhatsApp Web.
 
 
