@@ -11,5 +11,4 @@
 | D-09 | **Smart Search & Mass Tagging (Escenario B)** | Procesamiento seguro de mensajes por lotes con delays de 70ms y streaming WebSocket en tiempo real para evitar bloqueos y optimizar remarketing. | 🔒 LOCKED |
 | D-10 | **Listas Virtuales locales y parseo VCF/CSV** | Permite segmentar bases de datos masivas (agenda completa) sin depender de etiquetas nativas ni chatear previamente. | 🔒 LOCKED |
 | D-11 | **Subdominio y Reverse Proxy Nginx** | Configuración de `remarketing.nextemarketing.com` con reverse proxy en Nginx (puerto 80/443 -> 8989 UI y 3001 API/Sockets/Uploads) para acceso unificado y seguro sin exponer puertos directos. | 🟢 ACTIVE |
-
-
+| D-12 | **Acceso Directo y UI Mobile-First con QRCode Nativo** | Eliminación de barrera de login para acceso directo; integración de `react-qr-code` SVG local con alto contraste para lectura instantánea y navegación inferior fija en celulares. | 🟢 ACTIVE |

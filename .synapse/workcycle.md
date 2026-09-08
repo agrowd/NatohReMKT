@@ -79,4 +79,14 @@
   - Recompilación de producción en VPS (`npm run build`) y reinicio de PM2 `natoh-ui` y `natoh-api`.
 - [x] Verificación de propagación DNS del registro Tipo A `remarketing.nextemarketing.com` -> `149.50.128.73` completada con éxito.
 - [x] Ejecución de Certbot vía SSH en el VPS: Certificado SSL Let's Encrypt obtenido y desplegado en Nginx con redirección HTTPS automática (HTTP 200 OK verificado en frontend y `/api/whatsapp/status`).
-
+- [x] Eliminación de usuario y contraseña para Acceso Directo: Removida la barrera de login (`if (!user)`) y formulario de credenciales. Cualquier usuario entra directamente al sistema con permisos de administración.
+- [x] Optimización de Escaneo de QR:
+  - Migración de imagen externa lenta (`api.qrserver.com`) a renderizado SVG nativo y local con `react-qr-code`.
+  - Caja de alto contraste con fondo blanco y bordes redondeados para detección instantánea por cámaras de teléfono.
+  - Creación de Modal de Escaneo con apertura automática ante eventos de QR y botón directo `📲 ESCANEAR QR` en la barra superior.
+  - Guía paso a paso visual para vincular desde WhatsApp.
+- [x] Rediseño Mobile-First para Celulares (`< 768px`):
+  - Barra de navegación inferior fija adaptativa con iconos táctiles de 44px.
+  - Pestañas secundarias en el Constructor de Campañas para alternar limpiamente entre "Mensajes" y "Destinatarios" sin scroll interminable.
+  - Adaptación de grillas a columnas flexibles (delays, buscador inteligente, tarjetas).
+- [x] Despliegue en VPS (commit `6e37fa8`), rebuild con `npm run build` y reinicio de `natoh-ui`. Verificada carga en vivo 200 OK.

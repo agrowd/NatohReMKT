@@ -223,4 +223,29 @@ Configurar el subdominio `remarketing.nextemarketing.com` apuntando a la IP del 
    - Archivos estáticos en `/assets/` -> 200 OK.
 4. El sistema queda 100% operativo en su subdominio seguro.
 
+## Historial de Conversación - 2026-09-08 (Acceso Directo y Experiencia Mobile)
 
+### Requerimiento
+1. Eliminar el login de usuario y contraseña para ingresar directamente al sistema.
+2. Hacer que el código QR sea mucho más fácil y rápido de escanear.
+3. Optimizar y acomodar la interfaz para su uso fluido y cómodo desde celulares.
+
+### Análisis y Solución
+1. **Acceso Directo**:
+   - Eliminada la pantalla de login condicional en `client/src/App.jsx`. El usuario se inicializa automáticamente con rol administrador (`admin`), permitiendo uso libre e inmediato de todas las funciones sin contraseñas.
+   - Eliminado botón de logout innecesario y reemplazada la sección de credenciales en configuración por una tarjeta informativa del sistema.
+2. **Escaneo de QR Optimizado**:
+   - Reemplazada la etiqueta `img` que dependía de una API externa (`api.qrserver.com`) por el componente local SVG `react-qr-code`. El QR se genera instantáneamente en milisegundos sin latencia ni dependencia de terceros.
+   - Encapsulado en una tarjeta blanca de alto contraste con esquinas redondeadas para que la cámara del celular enfoque y lea el código en menos de un segundo.
+   - Creación de un **Modal de Escaneo** que se abre automáticamente cuando el bot solicita vinculación o al tocar la píldora de estado en la barra superior.
+   - Inclusión de guía paso a paso visual (Menú > Dispositivos vinculados > Vincular dispositivo) y botones de regeneración rápida.
+3. **Diseño Mobile-First (Celulares <= 768px)**:
+   - **Barra Inferior Fija**: La barra de navegación lateral se transforma en una barra inferior de fácil acceso con el pulgar, distribuyendo las pestañas uniformemente.
+   - **Constructor de Campañas Adaptativo**: Se incorporó un selector de pestañas móvil ("Mensajes" vs "Destinatarios") para evitar que el usuario deba desplazarse por cientos de contactos y listas para editar el mensaje.
+   - **Formularios e Inputs**: Las franjas de delays y límites pasan de 2 columnas rígidas a 1 columna flexible con áreas táctiles ampliadas (mínimo 44px de altura).
+   - **Buscador Inteligente**: Layout apilado verticalmente en smartphones.
+
+### Despliegue y Verificación
+- Compilación en Vite local completada con éxito (`dist/assets/index-DHY75V__.js` y `index-Dr3eevhI.css`).
+- Subida a GitHub (`main`) y desplegado en el VPS (`cd /srv/NatohReMKT && git pull && cd client && npm install && npm run build && pm2 restart natoh-ui`).
+- Verificado estado `200 OK` en producción bajo `https://remarketing.nextemarketing.com`.
