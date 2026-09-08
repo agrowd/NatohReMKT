@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import axios from 'axios';
+import QRCode from 'react-qr-code';
 
 const API_URL = (window.location.port === '5173' || window.location.port === '8989') 
   ? `${window.location.protocol}//${window.location.hostname}:3001` 
@@ -8,7 +9,7 @@ const API_URL = (window.location.port === '5173' || window.location.port === '89
 const socket = io(API_URL);
 
 // --- ICONOS SVG PREMIUM ---
-const Icon = ({ name, size = 20, color = "currentColor", onClick, style }) => {
+const Icon = ({ name, size = 20, color = "currentColor", onClick, style, className }) => {
   const icons = {
     zap: <><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" fill="var(--primary)" stroke="none" /></>,
     home: <><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></>,
@@ -24,10 +25,14 @@ const Icon = ({ name, size = 20, color = "currentColor", onClick, style }) => {
     message: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>,
     clip: <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>,
     plus: <><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></>,
-    search: <><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></>
+    search: <><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></>,
+    qr: <><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></>,
+    x: <><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>,
+    check: <polyline points="20 6 9 17 4 12"/>,
+    save: <><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></>
   };
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" onClick={onClick} style={{ cursor: onClick ? 'pointer' : 'default', ...style }}>
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" onClick={onClick} className={className} style={{ cursor: onClick ? 'pointer' : 'default', ...style }}>
       {icons[name] || <circle cx="12" cy="12" r="5" />}
     </svg>
   );
@@ -67,16 +72,12 @@ const prepareSteps = (steps) => {
 };
 
 function App() {
-  const [user, setUser] = useState(() => {
-    try {
-      const saved = localStorage.getItem('natoh_user');
-      return saved ? JSON.parse(saved) : null;
-    } catch (e) { return null; }
-  });
-
-  const [loginForm, setLoginForm] = useState({ username: '', password: '' });
+  // Acceso directo: sin pantalla de usuario y contraseña
+  const [user, setUser] = useState({ id: 1, username: 'admin', role: 'admin' });
   const [status, setStatus] = useState('VERIFICANDO...');
   const [qr, setQr] = useState(null);
+  const [showQrModal, setShowQrModal] = useState(false);
+  const [mobileBuilderTab, setMobileBuilderTab] = useState('flow'); // 'flow' | 'audience'
   const [labels, setLabels] = useState([]);
   const [isSyncingLabels, setIsSyncingLabels] = useState(false);
   const [activeTab, setActiveTab] = useState('builder');
@@ -156,8 +157,17 @@ function App() {
     }).catch(() => setStatus('ERROR'));
 
     socket.on('status', (s) => setStatus(s));
-    socket.on('qr', (data) => { setQr(data); setStatus('ESPERANDO ESCANEO'); });
-    socket.on('ready', () => { setStatus('BOT ONLINE'); setQr(null); fetchLabels(); });
+    socket.on('qr', (data) => { 
+      setQr(data); 
+      setStatus('ESPERANDO ESCANEO'); 
+      setShowQrModal(true); 
+    });
+    socket.on('ready', () => { 
+      setStatus('BOT ONLINE'); 
+      setQr(null); 
+      fetchLabels(); 
+      setTimeout(() => setShowQrModal(false), 1200);
+    });
     socket.on('labels', (data) => setLabels(data || []));
     socket.on('campaign_progress', (data) => setActiveCampaign(data));
     socket.on('campaign_finished', () => { 
@@ -251,21 +261,8 @@ function App() {
   const fetchCampaigns = async () => { try { const res = await axios.get(`${API_URL}/api/campaigns`); setCampaigns(res.data || []); } catch (e) {} };
   const fetchFlows = async () => { try { const res = await axios.get(`${API_URL}/api/flows`); setSavedFlows(res.data || []); } catch (e) {} };
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    try {
-      const res = await axios.post(`${API_URL}/api/login`, loginForm);
-      if (res.data.success) {
-        setUser(res.data.user);
-        localStorage.setItem('natoh_user', JSON.stringify(res.data.user));
-      }
-    } catch (e) { alert("Error de acceso"); }
-  };
-
-  const handleLogout = () => { setUser(null); localStorage.removeItem('natoh_user'); };
-
   const startCampaign = async () => {
-    if (status !== 'BOT ONLINE') return alert('Bot desconectado');
+    if (status !== 'BOT ONLINE') return alert('Bot desconectado. Encendé el bot y vinculá WhatsApp primero.');
     if (selectedLabels.length === 0 && selectedVirtualLists.length === 0) return alert('Seleccioná al menos una etiqueta nativa o una lista virtual');
     try {
       const pSteps = prepareSteps(flowSteps); // Variantes directas al motor
@@ -290,49 +287,43 @@ function App() {
     } catch (e) { alert("Error al subir archivo"); }
   };
 
-  if (!user) {
-    return (
-      <div className="app-wrapper" style={{ justifyContent: 'center', alignItems: 'center', display: 'flex' }}>
-        <div className="glass-card" style={{ maxWidth: '400px', width: '90%', textAlign: 'center', padding: '3rem' }}>
-          <Icon name="zap" size={60} />
-          <h2 style={{ fontSize: '2rem', margin: '1.5rem 0 2rem 0', fontWeight: 800 }}>NatohReMKT</h2>
-          <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <input type="text" placeholder="Usuario" value={loginForm.username} onChange={(e) => setLoginForm({...loginForm, username: e.target.value})} className="styled-input" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', textAlign: 'left' }} required />
-            <input type="password" placeholder="Contraseña" value={loginForm.password} onChange={(e) => setLoginForm({...loginForm, password: e.target.value})} className="styled-input" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', textAlign: 'left' }} required />
-            <button type="submit" className="btn btn-primary" style={{ height: '55px', marginTop: '1rem', width: '100%' }}>ENTRAR</button>
-          </form>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="app-wrapper">
+      {/* Navegación (Sidebar en PC / Barra Inferior Fija en Celular) */}
       <nav className="nav-sidebar">
-        <div className="nav-item active" style={{ marginBottom: '2.5rem' }}><Icon name="zap" size={28} /></div>
-        <div className={`nav-item ${activeTab === 'builder' ? 'active' : ''}`} onClick={() => setActiveTab('builder')} title="Constructor"><Icon name="home" /></div>
-        <div className={`nav-item ${activeTab === 'connection' ? 'active' : ''}`} onClick={() => setActiveTab('connection')} title="Conexión"><Icon name="connection" /></div>
+        <div className="nav-item active nav-logo-desktop" style={{ marginBottom: '1.5rem' }}><Icon name="zap" size={26} /></div>
+        <div className={`nav-item ${activeTab === 'builder' ? 'active' : ''}`} onClick={() => setActiveTab('builder')} title="Constructor de Campañas"><Icon name="home" /></div>
+        <div className={`nav-item ${activeTab === 'connection' ? 'active' : ''}`} onClick={() => { setActiveTab('connection'); setShowQrModal(true); }} title="Conexión WhatsApp">
+          <Icon name="connection" />
+          {qr && <div className="nav-badge" />}
+        </div>
         <div className={`nav-item ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')} title="Historial"><Icon name="history" /></div>
         <div className={`nav-item ${activeTab === 'smart-tag' ? 'active' : ''}`} onClick={() => setActiveTab('smart-tag')} title="Smart Tagging"><Icon name="user" /></div>
         <div className={`nav-item ${activeTab === 'vcf-import' ? 'active' : ''}`} onClick={() => setActiveTab('vcf-import')} title="Importador VCF/CSV"><Icon name="clip" /></div>
         <div className={`nav-item ${activeTab === 'smart-search' ? 'active' : ''}`} onClick={() => setActiveTab('smart-search')} title="Buscador Mensajes"><Icon name="search" /></div>
         <div className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')} title="Configuración"><Icon name="settings" /></div>
-        <div className="nav-item" onClick={handleLogout} style={{ marginTop: 'auto' }} title="Salir"><Icon name="logout" color="#ff4444" /></div>
       </nav>
 
       <div className="main-layout">
         <header className="top-bar">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', flex: 1 }}>
-            <h1 style={{ fontSize: '1.4rem', fontWeight: 700, margin: 0 }}>NatohReMKT</h1>
-            <div className="status-indicator">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', flexWrap: 'wrap', flex: 1 }}>
+            <h1 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, letterSpacing: '-0.5px' }}>NatohReMKT</h1>
+            
+            {/* Indicador de Estado / Botón rápido de QR */}
+            <div 
+              className={`status-pill ${status === 'BOT ONLINE' ? 'status-online' : (status === 'ESPERANDO ESCANEO' || qr) ? 'status-qr' : 'status-offline'}`}
+              onClick={() => setShowQrModal(true)}
+              title="Tocar para ver código QR o estado de WhatsApp"
+            >
               <div className={`dot ${status === 'BOT ONLINE' ? 'dot-ready' : 'dot-waiting'}`} />
-              <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>{status}</span>
+              <span>{status === 'BOT ONLINE' ? 'BOT ONLINE' : qr ? '📲 ESCANEAR QR' : status}</span>
             </div>
+
             {activeCampaign && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flex: 1, maxWidth: '450px', marginLeft: '2rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flex: 1, minWidth: '200px', maxWidth: '420px' }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', marginBottom: '4px' }}>
-                    <span style={{ fontWeight: 800 }}>⚡ Enviados: {activeCampaign.sentCount} / Total: {activeCampaign.total} {activeCampaign.skippedCount > 0 ? `(${activeCampaign.skippedCount} excluidos)` : ''}</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.68rem', marginBottom: '4px' }}>
+                    <span style={{ fontWeight: 800 }}>⚡ Enviados: {activeCampaign.sentCount} / {activeCampaign.total} {activeCampaign.skippedCount > 0 ? `(${activeCampaign.skippedCount} excluidos)` : ''}</span>
                   </div>
                   <div style={{ height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '10px', overflow: 'hidden' }}>
                     <div style={{ width: `${(((activeCampaign.sentCount + (activeCampaign.skippedCount || 0)) / (activeCampaign.total || 1)) * 100).toFixed(1)}%`, height: '100%', background: 'var(--primary)', boxShadow: '0 0 10px var(--primary)' }} />
@@ -340,7 +331,7 @@ function App() {
                 </div>
                 <button 
                   className="btn" 
-                  style={{ background: '#ff4444', color: '#fff', fontSize: '0.7rem', padding: '4px 10px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontWeight: 800, height: 'auto', lineHeight: 'normal' }}
+                  style={{ background: '#ff4444', color: '#fff', fontSize: '0.68rem', padding: '3px 8px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontWeight: 800, minHeight: 'auto', height: '26px' }}
                   onClick={async () => {
                     if (confirm('¿Seguro que deseas detener la campaña activa? No se enviarán más mensajes.')) {
                       try {
@@ -357,137 +348,278 @@ function App() {
               </div>
             )}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-             <span style={{ fontSize: '0.75rem', opacity: 0.5 }}>{user.username} ({user.role})</span>
-              {status === 'BOT ONLINE' && (
-                <button 
-                  className="btn" 
-                  onClick={() => fetchLabels(true)} 
-                  disabled={isSyncingLabels}
-                  style={{ background: 'var(--glass)', color: '#fff', opacity: isSyncingLabels ? 0.7 : 1 }}
-                >
-                  <Icon 
-                    name="refresh" 
-                    size={16} 
-                    className={isSyncingLabels ? "spin-animation" : ""}
-                  /> 
-                  {isSyncingLabels ? 'Sincronizando...' : 'Sincronizar'}
-                </button>
-              )}
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            {status === 'BOT ONLINE' && (
+              <button 
+                className="btn" 
+                onClick={() => fetchLabels(true)} 
+                disabled={isSyncingLabels}
+                style={{ background: 'var(--glass)', color: '#fff', padding: '6px 12px', minHeight: '34px', fontSize: '0.78rem', opacity: isSyncingLabels ? 0.7 : 1 }}
+              >
+                <Icon 
+                  name="refresh" 
+                  size={14} 
+                  className={isSyncingLabels ? "spin-animation" : ""}
+                /> 
+                <span>{isSyncingLabels ? 'Sincronizando...' : 'Sincronizar'}</span>
+              </button>
+            )}
           </div>
         </header>
 
+        {/* Banner flotante de QR listo cuando el modal está cerrado */}
+        {qr && !showQrModal && (
+          <div 
+            onClick={() => setShowQrModal(true)}
+            style={{
+              background: '#ffaa00',
+              color: '#000',
+              fontWeight: 800,
+              fontSize: '0.8rem',
+              padding: '8px 16px',
+              textAlign: 'center',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px'
+            }}
+          >
+            <Icon name="connection" size={16} color="#000" />
+            <span>⚠️ CÓDIGO QR LISTO: TOCÁ ACÁ PARA ESCANEAR CON TU CELULAR</span>
+          </div>
+        )}
+
+        {/* MODAL RESPONSIVO DE ESCANEO DE QR */}
+        {showQrModal && (
+          <div className="qr-modal-backdrop" onClick={() => setShowQrModal(false)}>
+            <div className="qr-modal-card" onClick={e => e.stopPropagation()}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Icon name="connection" size={22} color={status === 'BOT ONLINE' ? 'var(--primary)' : '#ffaa00'} />
+                  <h3 style={{ fontSize: '1.1rem', fontWeight: 800 }}>Conexión WhatsApp</h3>
+                </div>
+                <button 
+                  onClick={() => setShowQrModal(false)}
+                  style={{ background: 'transparent', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', padding: '4px' }}
+                >
+                  <Icon name="x" size={20} />
+                </button>
+              </div>
+
+              {status === 'BOT ONLINE' ? (
+                <div className="success-badge" style={{ padding: '1.5rem', marginBottom: '1rem' }}>
+                  <Icon name="check" size={40} color="var(--primary)" style={{ margin: '0 auto 0.5rem' }} />
+                  <div style={{ fontSize: '1.05rem', fontWeight: 800 }}>¡WhatsApp Conectado!</div>
+                  <div style={{ fontSize: '0.8rem', opacity: 0.8, marginTop: '4px' }}>El bot está en línea y sincronizado con tu teléfono.</div>
+                </div>
+              ) : qr ? (
+                <>
+                  <div className="qr-container">
+                    <QRCode 
+                      value={qr} 
+                      size={240} 
+                      style={{ height: "auto", maxWidth: "100%", width: "100%" }}
+                      viewBox={`0 0 256 256`}
+                    />
+                  </div>
+                  <div className="qr-step-box">
+                    <div><b>1.</b> Abrí WhatsApp en tu celular</div>
+                    <div><b>2.</b> Tocá <b>Menú ⋮</b> (Android) o <b>Configuración ⚙️</b> (iPhone)</div>
+                    <div><b>3.</b> Entrá en <b>Dispositivos vinculados</b> y elegí <b>Vincular un dispositivo</b></div>
+                    <div><b>4.</b> Apuntá la cámara a este código QR</div>
+                  </div>
+                </>
+              ) : (
+                <div style={{ padding: '2rem 1rem', background: 'rgba(255,255,255,0.02)', borderRadius: '16px', border: '1px dashed var(--glass-border)', margin: '1rem 0' }}>
+                  <p style={{ opacity: 0.7, fontSize: '0.88rem', marginBottom: '1.25rem' }}>El bot está desconectado o inicializando.</p>
+                  <button 
+                    className="btn btn-primary" 
+                    style={{ width: '100%' }}
+                    onClick={() => axios.post(`${API_URL}/api/whatsapp/start`)}
+                  >
+                    ENCENDER BOT Y GENERAR QR
+                  </button>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '8px', marginTop: '1rem', flexWrap: 'wrap' }}>
+                {qr && (
+                  <button 
+                    className="btn" 
+                    style={{ flex: 1, minWidth: '120px', background: 'rgba(255,255,255,0.05)', fontSize: '0.8rem' }}
+                    onClick={() => axios.post(`${API_URL}/api/whatsapp/start`)}
+                  >
+                    <Icon name="refresh" size={14} /> Regenerar QR
+                  </button>
+                )}
+                {status === 'BOT ONLINE' && (
+                  <button 
+                    className="btn" 
+                    style={{ flex: 1, minWidth: '120px', background: 'rgba(255,68,68,0.1)', color: '#ff4444', border: '1px solid rgba(255,68,68,0.2)', fontSize: '0.8rem' }}
+                    onClick={() => {
+                      if (confirm('¿Cerrar sesión de WhatsApp y desvincular el bot?')) {
+                        axios.post(`${API_URL}/api/whatsapp/logout`).then(() => window.location.reload());
+                      }
+                    }}
+                  >
+                    Desvincular WhatsApp
+                  </button>
+                )}
+                <button 
+                  className="btn" 
+                  style={{ flex: 1, minWidth: '80px', background: 'var(--glass)', color: 'var(--text-dim)', fontSize: '0.8rem' }}
+                  onClick={() => setShowQrModal(false)}
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="content-body">
           {activeTab === 'builder' && (
-            <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', width: '100%', height: '100%' }}>
-              <aside className="sub-sidebar">
-                <h3 className="section-title">Flujos Guardados</h3>
-                {savedFlows.map(f => (
-                  <div key={f.id} className="label-item" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                     <span onClick={() => setFlowSteps(normalizeSteps(JSON.parse(f.steps)))} style={{ cursor: 'pointer', flex: 1 }}>{f.name}</span>
-                     {user.role === 'admin' && <Icon name="trash" size={12} onClick={() => { if(confirm("¿Borrar?")) axios.delete(`${API_URL}/api/flows/${f.id}`).then(fetchFlows) }} style={{ opacity: 0.3 }} />}
-                  </div>
-                ))}
-                <h3 className="section-title" style={{ marginTop: '2rem' }}>Etiquetas WA</h3>
-                {labels.map(l => (
-                  <div key={l.id} className={`label-item ${selectedLabels.includes(l.id) ? 'active' : ''}`} onClick={() => setSelectedLabels(selectedLabels.includes(l.id) ? selectedLabels.filter(x => x !== l.id) : [...selectedLabels, l.id])}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
-                      <span>{l.name}</span>
-                      <span style={{ fontSize: '0.65rem', background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '4px', opacity: 0.6 }}>{l.memberCount || 0}</span>
-                    </div>
-                  </div>
-                ))}
+            <div>
+              {/* Selector Móvil de Sub-Pestañas en Builder */}
+              <div className="mobile-builder-nav">
+                <button 
+                  className={`mobile-tab-btn ${mobileBuilderTab === 'flow' ? 'active' : ''}`}
+                  onClick={() => setMobileBuilderTab('flow')}
+                >
+                  📝 Mensajes ({flowSteps.length})
+                </button>
+                <button 
+                  className={`mobile-tab-btn ${mobileBuilderTab === 'audience' ? 'active' : ''}`}
+                  onClick={() => setMobileBuilderTab('audience')}
+                >
+                  👥 Destinatarios ({selectedLabels.length + selectedVirtualLists.length})
+                </button>
+              </div>
 
-                <h3 className="section-title" style={{ marginTop: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>Listas Virtuales</span>
-                  <button className="btn" style={{ fontSize: '0.65rem', padding: '2px 6px', background: 'rgba(255,255,255,0.05)', border: 'none', color: '#fff', cursor: 'pointer' }} onClick={async () => {
-                    const name = prompt("Nombre de la nueva lista virtual:");
-                    if (!name) return;
-                    try {
-                      await axios.post(`${API_URL}/api/virtual-lists`, { name });
-                      fetchVirtualLists();
-                    } catch (e) {
-                      alert("Error al crear lista virtual");
-                    }
-                  }}>
-                    + NUEVA
-                  </button>
-                </h3>
-                {virtualLists.map(vl => (
-                  <div key={vl.id} className={`label-item ${selectedVirtualLists.includes(vl.id) ? 'active' : ''}`} style={{ borderColor: vl.color || 'var(--primary)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
-                      <span onClick={() => setSelectedVirtualLists(selectedVirtualLists.includes(vl.id) ? selectedVirtualLists.filter(x => x !== vl.id) : [...selectedVirtualLists, vl.id])} style={{ flex: 1, cursor: 'pointer' }}>
-                        📁 {vl.name}
-                      </span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontSize: '0.65rem', background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '4px', opacity: 0.6 }}>{vl.memberCount || 0}</span>
-                        {user.role === 'admin' && (
-                          <Icon name="trash" size={12} onClick={async (e) => {
-                            e.stopPropagation();
-                            if (confirm(`¿Borrar la lista virtual "${vl.name}"?`)) {
-                              try {
-                                await axios.delete(`${API_URL}/api/virtual-lists/${vl.id}`);
-                                setSelectedVirtualLists(selectedVirtualLists.filter(x => x !== vl.id));
-                                fetchVirtualLists();
-                              } catch(e) {
-                                alert("Error al borrar lista virtual");
+              <div className="builder-layout">
+                <aside className={`sub-sidebar ${mobileBuilderTab !== 'audience' ? 'mobile-hidden' : ''}`}>
+                  <h3 className="section-title">Flujos Guardados</h3>
+                  {savedFlows.map(f => (
+                    <div key={f.id} className="label-item" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                       <span onClick={() => { setFlowSteps(normalizeSteps(JSON.parse(f.steps))); setMobileBuilderTab('flow'); }} style={{ cursor: 'pointer', flex: 1 }}>{f.name}</span>
+                       {user.role === 'admin' && <Icon name="trash" size={12} onClick={() => { if(confirm("¿Borrar?")) axios.delete(`${API_URL}/api/flows/${f.id}`).then(fetchFlows) }} style={{ opacity: 0.3 }} />}
+                    </div>
+                  ))}
+                  <h3 className="section-title" style={{ marginTop: '2rem' }}>Etiquetas WA</h3>
+                  {labels.map(l => (
+                    <div key={l.id} className={`label-item ${selectedLabels.includes(l.id) ? 'active' : ''}`} onClick={() => setSelectedLabels(selectedLabels.includes(l.id) ? selectedLabels.filter(x => x !== l.id) : [...selectedLabels, l.id])}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                        <span>{l.name}</span>
+                        <span style={{ fontSize: '0.65rem', background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '4px', opacity: 0.6 }}>{l.memberCount || 0}</span>
+                      </div>
+                    </div>
+                  ))}
+
+                  <h3 className="section-title" style={{ marginTop: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>Listas Virtuales</span>
+                    <button className="btn" style={{ fontSize: '0.65rem', padding: '2px 6px', minHeight: 'auto', background: 'rgba(255,255,255,0.05)', border: 'none', color: '#fff', cursor: 'pointer' }} onClick={async () => {
+                      const name = prompt("Nombre de la nueva lista virtual:");
+                      if (!name) return;
+                      try {
+                        await axios.post(`${API_URL}/api/virtual-lists`, { name });
+                        fetchVirtualLists();
+                      } catch (e) {
+                        alert("Error al crear lista virtual");
+                      }
+                    }}>
+                      + NUEVA
+                    </button>
+                  </h3>
+                  {virtualLists.map(vl => (
+                    <div key={vl.id} className={`label-item ${selectedVirtualLists.includes(vl.id) ? 'active' : ''}`} style={{ borderColor: vl.color || 'var(--primary)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                        <span onClick={() => setSelectedVirtualLists(selectedVirtualLists.includes(vl.id) ? selectedVirtualLists.filter(x => x !== vl.id) : [...selectedVirtualLists, vl.id])} style={{ flex: 1, cursor: 'pointer' }}>
+                          📁 {vl.name}
+                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '0.65rem', background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '4px', opacity: 0.6 }}>{vl.memberCount || 0}</span>
+                          {user.role === 'admin' && (
+                            <Icon name="trash" size={12} onClick={async (e) => {
+                              e.stopPropagation();
+                              if (confirm(`¿Borrar la lista virtual "${vl.name}"?`)) {
+                                try {
+                                  await axios.delete(`${API_URL}/api/virtual-lists/${vl.id}`);
+                                  setSelectedVirtualLists(selectedVirtualLists.filter(x => x !== vl.id));
+                                  fetchVirtualLists();
+                                } catch(e) {
+                                  alert("Error al borrar lista virtual");
+                                }
                               }
-                            }
-                          }} style={{ opacity: 0.3, cursor: 'pointer' }} />
-                        )}
+                            }} style={{ opacity: 0.3, cursor: 'pointer' }} />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </aside>
+
+                <main className={`workspace ${mobileBuilderTab !== 'flow' ? 'mobile-hidden' : ''}`}>
+                  {/* Recordatorio táctil en Celular */}
+                  <div 
+                    onClick={() => setMobileBuilderTab('audience')}
+                    className="mobile-builder-nav"
+                    style={{ background: 'rgba(0,255,136,0.06)', border: '1px solid rgba(0,255,136,0.2)', padding: '10px 14px', borderRadius: '12px', marginBottom: '1rem', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                  >
+                    <span style={{ fontSize: '0.8rem', color: 'var(--primary)' }}>
+                      👥 Destinatarios: <b>{selectedLabels.length} etiquetas</b>, <b>{selectedVirtualLists.length} listas</b>
+                    </span>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--primary)' }}>Cambiar ›</span>
+                  </div>
+
+                  <div className="glass-card" style={{ marginBottom: '1.5rem' }}>
+                    <div className="delays-grid">
+                      <div className="styled-input-group">
+                        <label className="input-label"><Icon name="user" size={14} /> Delay entre Leads (Franja seg)</label>
+                        <div className="range-container">
+                          <input type="number" value={config.minLeadDelay} onChange={(e) => setConfig({...config, minLeadDelay: parseInt(e.target.value)})} className="styled-input" placeholder="MÍN" />
+                          <div className="range-divider" />
+                          <input type="number" value={config.maxLeadDelay} onChange={(e) => setConfig({...config, maxLeadDelay: parseInt(e.target.value)})} className="styled-input" placeholder="MÁX" />
+                        </div>
+                      </div>
+                      <div className="styled-input-group">
+                        <label className="input-label"><Icon name="message" size={14} /> Delay entre Pasos (Franja seg)</label>
+                        <div className="range-container">
+                          <input type="number" value={config.minStepDelay} onChange={(e) => setConfig({...config, minStepDelay: parseInt(e.target.value)})} className="styled-input" placeholder="MÍN" />
+                          <div className="range-divider" />
+                          <input type="number" value={config.maxStepDelay} onChange={(e) => setConfig({...config, maxStepDelay: parseInt(e.target.value)})} className="styled-input" placeholder="MÁX" />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="delays-grid" style={{ marginTop: '1.5rem' }}>
+                      <div className="styled-input-group">
+                        <label className="input-label"><Icon name="zap" size={14} /> Límite de envíos (Lote)</label>
+                        <input type="number" value={config.batchLimit || ''} onChange={(e) => setConfig({...config, batchLimit: parseInt(e.target.value)})} className="styled-input" placeholder="Ej: 50 (Vacio = Todos)" />
+                        <p style={{ fontSize: '0.6rem', opacity: 0.5, marginTop: '5px' }}>Ideal para enviar de a 50 leads por día.</p>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', justifyContent: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <input type="checkbox" id="auto-remove" checked={config.autoRemove || false} onChange={(e) => setConfig({...config, autoRemove: e.target.checked})} style={{ width: '18px', height: '18px', cursor: 'pointer' }} />
+                          <label htmlFor="auto-remove" style={{ fontSize: '0.85rem', cursor: 'pointer', userSelect: 'none' }}>Quitar de la etiqueta al enviar</label>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <label htmlFor="exclusion-period" style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--primary)' }}>Filtro de Exclusión Anti-Spam:</label>
+                          <select 
+                            id="exclusion-period"
+                            value={config.exclusionPeriod || '7d'}
+                            onChange={(e) => setConfig({...config, exclusionPeriod: e.target.value, excludeEver: e.target.value === 'ever'})}
+                            style={{ background: 'var(--glass)', color: '#fff', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', padding: '6px 10px', fontSize: '0.8rem', cursor: 'pointer', outline: 'none' }}
+                          >
+                            <option value="none">No excluir (Enviar siempre)</option>
+                            <option value="48h">Evitar si se envió en las últimas 48 horas</option>
+                            <option value="7d">Evitar si se envió en los últimos 7 días (1 semana)</option>
+                            <option value="ever">Memoria Infinita (Evitar si se envió alguna vez)</option>
+                          </select>
+                        </div>
                       </div>
                     </div>
                   </div>
-                ))}
-              </aside>
-              <main className="workspace">
-                 <div className="glass-card" style={{ marginBottom: '1.5rem' }}>
-                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
-                    <div className="styled-input-group">
-                      <label className="input-label"><Icon name="user" size={14} /> Delay entre Leads (Franja seg)</label>
-                      <div className="range-container">
-                        <input type="number" value={config.minLeadDelay} onChange={(e) => setConfig({...config, minLeadDelay: parseInt(e.target.value)})} className="styled-input" placeholder="MÍN" />
-                        <div className="range-divider" />
-                        <input type="number" value={config.maxLeadDelay} onChange={(e) => setConfig({...config, maxLeadDelay: parseInt(e.target.value)})} className="styled-input" placeholder="MÁX" />
-                      </div>
-                    </div>
-                    <div className="styled-input-group">
-                      <label className="input-label"><Icon name="message" size={14} /> Delay entre Pasos (Franja seg)</label>
-                      <div className="range-container">
-                        <input type="number" value={config.minStepDelay} onChange={(e) => setConfig({...config, minStepDelay: parseInt(e.target.value)})} className="styled-input" placeholder="MÍN" />
-                        <div className="range-divider" />
-                        <input type="number" value={config.maxStepDelay} onChange={(e) => setConfig({...config, maxStepDelay: parseInt(e.target.value)})} className="styled-input" placeholder="MÁX" />
-                      </div>
-                    </div>
-                  </div>
-                  <div style={{ marginTop: '1.5rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
-                    <div className="styled-input-group">
-                      <label className="input-label"><Icon name="zap" size={14} /> Límite de envíos (Lote)</label>
-                      <input type="number" value={config.batchLimit || ''} onChange={(e) => setConfig({...config, batchLimit: parseInt(e.target.value)})} className="styled-input" placeholder="Ej: 50 (Vacio = Todos)" />
-                      <p style={{ fontSize: '0.6rem', opacity: 0.5, marginTop: '5px' }}>Ideal para enviar de a 50 leads por día.</p>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', justifyContent: 'center' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <input type="checkbox" id="auto-remove" checked={config.autoRemove || false} onChange={(e) => setConfig({...config, autoRemove: e.target.checked})} style={{ width: '18px', height: '18px', cursor: 'pointer' }} />
-                        <label htmlFor="auto-remove" style={{ fontSize: '0.85rem', cursor: 'pointer', userSelect: 'none' }}>Quitar de la etiqueta al enviar</label>
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <label htmlFor="exclusion-period" style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--primary)' }}>Filtro de Exclusión Anti-Spam:</label>
-                        <select 
-                          id="exclusion-period"
-                          value={config.exclusionPeriod || '7d'}
-                          onChange={(e) => setConfig({...config, exclusionPeriod: e.target.value, excludeEver: e.target.value === 'ever'})}
-                          style={{ background: 'var(--glass)', color: '#fff', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', padding: '6px 10px', fontSize: '0.8rem', cursor: 'pointer', outline: 'none' }}
-                        >
-                          <option value="none">No excluir (Enviar siempre)</option>
-                          <option value="48h">Evitar si se envió en las últimas 48 horas</option>
-                          <option value="7d">Evitar si se envió en los últimos 7 días (1 semana)</option>
-                          <option value="ever">Memoria Infinita (Evitar si se envió alguna vez)</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-                </div>
                 
                 <div className="glass-card">
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
@@ -569,23 +701,62 @@ function App() {
                 </div>
               </main>
             </div>
-          )}
+          </div>
+        )}
 
-          {activeTab === 'connection' && (
-             <div className="workspace">
-                <div className="glass-card" style={{ textAlign: 'center', maxWidth: '450px' }}>
-                  <Icon name="connection" size={60} />
-                  <h2 style={{ margin: '1.5rem 0' }}>Conexión WhatsApp</h2>
-                  <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
-                    <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => axios.post(`${API_URL}/api/whatsapp/start`)}>ENCENDER</button>
-                    <button className="btn" style={{ flex: 1, background: 'rgba(255,68,68,0.1)', color: '#ff4444', border: '1px solid rgba(255,68,68,0.2)' }} onClick={() => axios.post(`${API_URL}/api/whatsapp/stop`)}>APAGAR</button>
-                  </div>
-                  {qr && <div className="qr-container"><img src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qr)}`} alt="QR" /></div>}
-                  {status === 'BOT ONLINE' && <div className="success-badge">✅ BOT CONECTADO CORRECTAMENTE</div>}
-                  <button className="btn" style={{ marginTop: '1.5rem', width: '100%', background: 'rgba(255,255,255,0.05)' }} onClick={() => { if(confirm("¿Cerrar sesión?")) axios.post(`${API_URL}/api/whatsapp/logout`).then(() => window.location.reload()) }}>CERRAR SESIÓN (LOGOUT)</button>
+        {activeTab === 'connection' && (
+           <div className="workspace" style={{ display: 'flex', justifyContent: 'center' }}>
+              <div className="glass-card" style={{ textAlign: 'center', maxWidth: '480px', width: '100%' }}>
+                <Icon name="connection" size={50} color={status === 'BOT ONLINE' ? 'var(--primary)' : '#ffaa00'} />
+                <h2 style={{ margin: '1rem 0 0.5rem 0', fontSize: '1.4rem' }}>Conexión WhatsApp</h2>
+                <p style={{ fontSize: '0.85rem', opacity: 0.6, marginBottom: '1.5rem' }}>
+                  Estado actual: <b style={{ color: status === 'BOT ONLINE' ? 'var(--primary)' : '#ffaa00' }}>{status}</b>
+                </p>
+
+                <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+                  <button className="btn btn-primary" style={{ flex: 1, minWidth: '140px' }} onClick={() => axios.post(`${API_URL}/api/whatsapp/start`)}>
+                    <Icon name="refresh" size={16} /> ENCENDER / REINICIAR
+                  </button>
+                  <button className="btn" style={{ flex: 1, minWidth: '120px', background: 'rgba(255,68,68,0.1)', color: '#ff4444', border: '1px solid rgba(255,68,68,0.2)' }} onClick={() => axios.post(`${API_URL}/api/whatsapp/stop`)}>
+                    APAGAR
+                  </button>
                 </div>
-             </div>
-          )}
+
+                {qr ? (
+                  <div>
+                    <div className="qr-container">
+                      <QRCode 
+                        value={qr} 
+                        size={240} 
+                        style={{ height: "auto", maxWidth: "100%", width: "100%" }}
+                        viewBox={`0 0 256 256`}
+                      />
+                    </div>
+                    <div className="qr-step-box">
+                      <div><b>1.</b> Abrí WhatsApp en tu celular</div>
+                      <div><b>2.</b> Tocá <b>Menú ⋮</b> o <b>Configuración ⚙️</b></div>
+                      <div><b>3.</b> Entrá en <b>Dispositivos vinculados</b> y tocá <b>Vincular un dispositivo</b></div>
+                      <div><b>4.</b> Apuntá la cámara a este código QR</div>
+                    </div>
+                  </div>
+                ) : status === 'BOT ONLINE' ? (
+                  <div className="success-badge" style={{ margin: '1rem 0', padding: '1.5rem' }}>
+                    <Icon name="check" size={40} color="var(--primary)" style={{ margin: '0 auto 0.5rem' }} />
+                    <div style={{ fontSize: '1.1rem', fontWeight: 800 }}>✅ BOT CONECTADO CORRECTAMENTE</div>
+                    <div style={{ fontSize: '0.8rem', opacity: 0.8, marginTop: '4px' }}>Listo para procesar contactos y enviar campañas.</div>
+                  </div>
+                ) : (
+                  <div style={{ padding: '2rem 1rem', background: 'rgba(255,255,255,0.02)', borderRadius: '16px', border: '1px dashed var(--glass-border)', margin: '1rem 0' }}>
+                    <p style={{ opacity: 0.6, fontSize: '0.88rem' }}>El bot está apagado. Hacé click en "ENCENDER" para generar un nuevo código QR.</p>
+                  </div>
+                )}
+
+                <button className="btn" style={{ marginTop: '1.5rem', width: '100%', background: 'rgba(255,255,255,0.04)', color: '#ff4444', border: '1px solid rgba(255,68,68,0.15)', fontSize: '0.82rem' }} onClick={() => { if(confirm("¿Cerrar sesión de WhatsApp en el servidor y desvincular?")) axios.post(`${API_URL}/api/whatsapp/logout`).then(() => window.location.reload()) }}>
+                  DESVINCULAR / CERRAR SESIÓN DE WHATSAPP
+                </button>
+              </div>
+           </div>
+        )}
 
           {activeTab === 'history' && (
              <div className="workspace">
@@ -692,7 +863,7 @@ function App() {
 
 
           {activeTab === 'smart-search' && (
-             <div className="workspace" style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: '1.5rem', width: '100%', height: '100%' }}>
+             <div className="workspace smart-search-grid">
                 <div className="glass-card" style={{ height: 'fit-content' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '1.5rem' }}>
                     <Icon name="search" size={28} color="var(--primary)" />
@@ -1171,14 +1342,18 @@ function App() {
           {activeTab === 'settings' && (
              <div className="workspace">
                 <div className="glass-card" style={{ maxWidth: '500px' }}>
-                  <Icon name="settings" size={60} />
-                  <h2 style={{ margin: '1.5rem 0' }}>Configuración</h2>
-                  <p style={{ opacity: 0.5, marginBottom: '2rem' }}>Usuario actual: <b>{user.username}</b></p>
-                  <button className="btn btn-primary" style={{ height: '55px', width: '100%' }} onClick={() => {
-                    const nu = prompt("Nuevo Usuario:", user.username);
-                    const np = prompt("Nueva Contraseña:");
-                    if(nu && np) axios.put(`${API_URL}/api/users/update`, {id: user.id, username: nu, password: np}).then(() => handleLogout());
-                  }}>ACTUALIZAR CREDENCIALES</button>
+                  <Icon name="settings" size={48} color="var(--primary)" />
+                  <h2 style={{ margin: '1rem 0 0.5rem 0' }}>Configuración del Sistema</h2>
+                  <p style={{ opacity: 0.6, fontSize: '0.85rem', marginBottom: '1.5rem' }}>
+                    Acceso directo activo. El sistema no requiere usuario ni contraseña para ingresar.
+                  </p>
+                  
+                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: '1.25rem', borderRadius: '14px', border: '1px solid var(--glass-border)', textAlign: 'left', fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div><b style={{ color: 'var(--primary)' }}>Dominio:</b> remarketing.nextemarketing.com</div>
+                    <div><b style={{ color: 'var(--primary)' }}>Seguridad:</b> SSL / HTTPS (Let's Encrypt)</div>
+                    <div><b style={{ color: 'var(--primary)' }}>WhatsApp Engine:</b> Chromium Headless (whatsapp-web.js)</div>
+                    <div><b style={{ color: 'var(--primary)' }}>Modo de Acceso:</b> Libre / Directo</div>
+                  </div>
                 </div>
              </div>
           )}
