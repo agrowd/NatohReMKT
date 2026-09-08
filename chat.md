@@ -209,9 +209,18 @@ Configurar el subdominio `remarketing.nextemarketing.com` apuntando a la IP del 
    - Ajustada la constante `API_URL` para que cuando el frontend se ejecute a través del dominio o proxy inverso utilice directamente `window.location.origin`, manteniendo la compatibilidad local/puerto directo en desarrollo.
    - Compilado el cliente en producción (`npm run build`) y reiniciados los procesos PM2 `natoh-ui` y `natoh-api`.
 
-### Tarea Requerida del Usuario (Panel DonWeb)
-- Crear un registro **Tipo A**:
-  - **Nombre / Host:** `remarketing`
-  - **Destino / Valor:** `149.50.128.73`
-  - **TTL:** 300 segundos (o por defecto).
+### Tarea Realizada por el Usuario (Panel DonWeb)
+- Creado registro **Tipo A**: `remarketing` -> `149.50.128.73` (propagado correctamente).
+
+### Despliegue de SSL y Verificación Final
+1. Se comprobó la resolución DNS en Windows con `Resolve-DnsName` confirmando IP `149.50.128.73`.
+2. Se conectó por SSH al servidor VPS y se ejecutó Certbot:
+   - Certificado Let's Encrypt generado exitosamente para `remarketing.nextemarketing.com`.
+   - Nginx actualizado automáticamente con redirección forzosa de HTTP a HTTPS.
+3. Se verificaron las respuestas con curl:
+   - `https://remarketing.nextemarketing.com` -> 200 OK (carga frontend estático React).
+   - `https://remarketing.nextemarketing.com/api/whatsapp/status` -> 200 OK (responde Express API).
+   - Archivos estáticos en `/assets/` -> 200 OK.
+4. El sistema queda 100% operativo en su subdominio seguro.
+
 

@@ -16,6 +16,7 @@
   - `/api/` -> `http://127.0.0.1:3001` (Backend Express)
   - `/socket.io/` -> `http://127.0.0.1:3001` (WebSocket upgrades)
   - `/uploads/` -> `http://127.0.0.1:3001` (Multimedia)
-- **SSL:** Certbot Let's Encrypt (pendiente de propagación DNS)
+- **SSL:** Certbot Let's Encrypt ✅ ACTIVO con renovación automática (Expira: 2026-12-07)
+- **URL Pública:** `https://remarketing.nextemarketing.com`
 - **Dependencies:** `chromium`, `libatk-bridge2.0-0`, etc (for Puppeteer)
 

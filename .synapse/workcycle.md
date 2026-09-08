@@ -77,5 +77,6 @@
   - Verificación de sintaxis de Nginx (`nginx -t`) y recarga del servicio.
   - Modificación de `client/src/App.jsx` para resolución transparente de endpoints via `window.location.origin` (commit `e446ae0` en `main`).
   - Recompilación de producción en VPS (`npm run build`) y reinicio de PM2 `natoh-ui` y `natoh-api`.
-- [ ] Pendiente: El usuario debe crear el registro DNS Tipo A en el panel de DonWeb (`remarketing` -> `149.50.128.73`).
-- [ ] Pendiente: Una vez propague el DNS, ejecutar Certbot para activar SSL gratuito automático (HTTPS).
+- [x] Verificación de propagación DNS del registro Tipo A `remarketing.nextemarketing.com` -> `149.50.128.73` completada con éxito.
+- [x] Ejecución de Certbot vía SSH en el VPS: Certificado SSL Let's Encrypt obtenido y desplegado en Nginx con redirección HTTPS automática (HTTP 200 OK verificado en frontend y `/api/whatsapp/status`).
+
