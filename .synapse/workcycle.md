@@ -51,7 +51,7 @@
 - [x] Implementación de la función `delayWithCancelCheck` en el engine backend para abortar de inmediato las demoras entre mensajes y envíos.
 - [x] Integración de un botón "DETENER" de color rojo con ventana de confirmación en la UI React (top bar) junto a la barra de progreso de envíos.
 
-## Sesión: 2026-07-08 (Actual)
+## Sesión: 2026-07-08
 - [x] Creación del script de backend `server/import-special-list.js` para parsear, filtrar y agrupar contactos del archivo VCF pesado `contacts2.vcf` directamente en el servidor Debian.
 - [x] Filtro combinado de palabras clave ("luz" o "hifu") en una única lista virtual local llamada "Luz o Hifu".
 - [x] Cruce y exclusión automática en base de datos local SQLite para ignorar contactos a los que ya se les haya enviado mensajes con éxito (`status = 'sent'`).
@@ -60,5 +60,13 @@
 - [x] Actualización de la dependencia whatsapp-web.js a github:wwebjs/whatsapp-web.js#main en package.json para corregir el error crítico 'No LID for users' provocado por los cambios recientes en WhatsApp Web.
 - [x] Cambio de la lógica de exclusión para usar un filtro de 7 días (1 semana) en lugar de exclusión permanente por defecto, tanto en importaciones de archivos de agenda como en el motor de campañas.
 - [x] Rediseño de la interfaz de configuración de campañas en React para reemplazar el checkbox de 'Memoria Infinita' por un selector dropdown que permite escoger el período de exclusión (No excluir, 48 horas, 7 días, Permanente).
+
+## Sesión: 2026-09-08 (Actual)
+- [x] Adaptación de la estrategia de copywriting para la clínica estética según requerimiento del cliente:
+  - Foco en reducción y celulitis con HIFU Corporal y Exilis (1 zona $75.000 / 2 zonas $90.000).
+  - Integración de Depilación Definitiva con cupos limitados y CTA hacia consultorio en Corrientes 1466.
+- [x] Estructuración de campaña en 2 bloques con 3 variantes de texto cada una para evasión de bloqueos en WhatsApp.
+- [x] Creación del flujo guardado `EnvioAntigravity` y automatización de su inserción en SQLite vía `server/database.js` y `server/seed-flow-antigravity.js`.
+
 
 

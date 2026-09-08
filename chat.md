@@ -152,6 +152,29 @@ El usuario coloca un archivo de contactos VCF pesado llamado `contacts2.vcf` (co
   - Se integró soporte en el motor de campañas de la API para admitir la propiedad `config.exclusionPeriod` (valores: `none`, `48h`, `7d`, `ever`).
   - Se reemplazó el checkbox de "Memoria Infinita" en `client/src/App.jsx` por un menú desplegable de selección de período de exclusión anti-spam para mayor versatilidad.
 
+## Historial de Conversación - 2026-09-08
+
+### Requerimiento
+Adaptar la estrategia de mensajería del bot para responder a las nuevas solicitudes comerciales de la estética:
+1. Reemplazar el enfoque antiguo de sólo "HIFU facial y luz pulsada".
+2. Incorporar tratamientos reductores y para celulitis: **HIFU Corporal** y **Exilis** con esquema de precios de 1 zona por $75.000 y 2 zonas por $90.000.
+3. Incluir **Depilación Definitiva** como tratamiento complementario.
+4. Diseñar la campaña bajo la Opción 1 (secuencia de 2 bloques con variantes anti-bloqueo) y dejarla precargada en el sistema bajo el nombre **EnvioAntigravity** para que aparezca directamente seleccionable en la barra lateral de flujos guardados.
+
+### Implementación
+1. **Modelado de Flujo Secuencial con Variantes**:
+   - **Bloque 1**: Tratamientos reductores y celulitis (HIFU Corporal & Exilis Ultra) con 3 variantes de texto redactadas persuasivamente.
+   - **Bloque 2**: Depilación definitiva láser y llamado a la acción hacia Corrientes 1466, también con 3 variantes de texto.
+2. **Carga y Persistencia Automática**:
+   - Actualizado `server/database.js` para inicializar/actualizar automáticamente el flujo `EnvioAntigravity` en la tabla `flows` al arrancar el backend.
+   - Creado script `server/seed-flow-antigravity.js` para seeding manual o verificación de flujo.
+   - El flujo queda disponible en el sidebar "Flujos Guardados" de la aplicación web y carga los bloques y variantes con un solo click.
+
+### Verificación
+- Verificado script `seed-flow-antigravity.js` ejecutado en Node con éxito e insertado en la base de datos local SQLite.
+- Verificada la sintaxis de `server/index.js` y `server/database.js`.
+
+
 
 
 
