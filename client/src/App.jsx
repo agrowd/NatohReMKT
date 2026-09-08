@@ -2,7 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import axios from 'axios';
 
-const API_URL = window.location.protocol + '//' + window.location.hostname + ':3001';
+const API_URL = (window.location.port === '5173' || window.location.port === '8989') 
+  ? `${window.location.protocol}//${window.location.hostname}:3001` 
+  : window.location.origin;
 const socket = io(API_URL);
 
 // --- ICONOS SVG PREMIUM ---
