@@ -71,8 +71,11 @@
   - Detección de por qué la Campaña 64 terminó en 15 segundos sin verse en el front: 1,673 contactos de la lista fueron saltados (`skipped`) porque el frontend tenía activo el filtro `ever` (memoria infinita) y todos habían sido contactados el 28 de agosto (>7 días atrás).
   - Diagnóstico de error `No LID for user` en los 54 contactos restantes: corresponden a números inexistentes/mal formateados en la agenda VCF que no poseen cuenta en WhatsApp.
   - Corrección de fallback en backend (`server/index.js`) para que por defecto aplique la ventana de 7 días y no excluya de forma permanente.
-  - Mejora en `client/src/App.jsx` para que el selector de exclusión use `7d` (1 semana) por defecto y la barra de progreso reporte en vivo tanto mensajes enviados como contactos excluidos en tiempo real.
-
-
-
-
+- [x] Configuración de subdominio `remarketing.nextemarketing.com` apuntando a VPS `149.50.128.73`:
+  - Creación y activación de VirtualHost Nginx en `/etc/nginx/sites-available/remarketing.nextemarketing.com`.
+  - Configuración de reverse proxy para Frontend (:8989), Backend API (:3001), WebSockets (:3001) y Uploads (:3001).
+  - Verificación de sintaxis de Nginx (`nginx -t`) y recarga del servicio.
+  - Modificación de `client/src/App.jsx` para resolución transparente de endpoints via `window.location.origin` (commit `e446ae0` en `main`).
+  - Recompilación de producción en VPS (`npm run build`) y reinicio de PM2 `natoh-ui` y `natoh-api`.
+- [ ] Pendiente: El usuario debe crear el registro DNS Tipo A en el panel de DonWeb (`remarketing` -> `149.50.128.73`).
+- [ ] Pendiente: Una vez propague el DNS, ejecutar Certbot para activar SSL gratuito automático (HTTPS).

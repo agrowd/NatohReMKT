@@ -10,5 +10,6 @@
 | D-08 | **Deep Space v5.0 UI** | Interfaz premium centrada en la experiencia de usuario y claridad en la conexión del bot | 🟢 ACTIVE |
 | D-09 | **Smart Search & Mass Tagging (Escenario B)** | Procesamiento seguro de mensajes por lotes con delays de 70ms y streaming WebSocket en tiempo real para evitar bloqueos y optimizar remarketing. | 🔒 LOCKED |
 | D-10 | **Listas Virtuales locales y parseo VCF/CSV** | Permite segmentar bases de datos masivas (agenda completa) sin depender de etiquetas nativas ni chatear previamente. | 🔒 LOCKED |
+| D-11 | **Subdominio y Reverse Proxy Nginx** | Configuración de `remarketing.nextemarketing.com` con reverse proxy en Nginx (puerto 80/443 -> 8989 UI y 3001 API/Sockets/Uploads) para acceso unificado y seguro sin exponer puertos directos. | 🟢 ACTIVE |
 
 

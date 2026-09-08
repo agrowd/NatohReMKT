@@ -185,12 +185,33 @@ Adaptar la estrategia de mensajería del bot para responder a las nuevas solicit
   4. Dado que el 100% de la lista fue procesada entre saltados y errores en menos de 15 segundos, `activeCampaign` volvió a `null`, ocultando la barra de progreso en el front.
 - **Acciones Correctivas:**
   1. Configuración por defecto de la ventana de exclusión en `7d` (7 días) tanto en el front (`client/src/App.jsx`) como en el motor backend (`server/index.js`). Como los envíos anteriores fueron el 28 de agosto (hace 11 días), ahora la lista de 1,673 contactos queda completamente habilitada para el nuevo envío de `EnvioAntigravity`.
-  2. Actualización de la barra de progreso en la cabecera para reportar el conteo de contactos excluidos en tiempo real y no dejar en silencio el estado.
+  - Mejora en `client/src/App.jsx` para que el selector de exclusión use `7d` (1 semana) por defecto y la barra de progreso reporte en vivo tanto mensajes enviados como contactos excluidos en tiempo real.
   3. Tratamiento de error en `server/whatsapp.js` para capturar `No LID` y clasificarlo limpiamente como contacto sin cuenta de WhatsApp o mal formateado.
 
+## Historial de Conversación - 2026-09-08 (Subdominio y Reverse Proxy)
 
+### Requerimiento
+Configurar el subdominio `remarketing.nextemarketing.com` apuntando a la IP del VPS (`149.50.128.73`), delimitando con total claridad qué debe hacer el usuario y qué resuelve el agente.
 
+### Análisis y Arquitectura
+- El dominio raíz `nextemarketing.com` delega sus DNS en DonWeb (`ns1.donweb.com`, `ns2.donweb.com`). La creación del registro tipo A debe realizarse en el panel de control del registrador de dominio.
+- En el servidor Debian, el sistema corre en dos procesos PM2 independientes:
+  - `natoh-ui`: puerto local `8989` (Frontend Vite/React compilado estático).
+  - `natoh-api`: puerto local `3001` (Backend Express, Socket.io y almacenamiento de uploads).
+- Para unificar ambos bajo el puerto estándar 80/443 sin exponer puertos directos ni tener problemas de Mixed Content / CORS, se requiere un Reverse Proxy Nginx.
 
+### Implementación Realizada por el Agente (Servidor VPS)
+1. **Configuración VirtualHost Nginx**:
+   - Creado `/etc/nginx/sites-available/remarketing.nextemarketing.com` con proxy_pass a `127.0.0.1:8989` para la raíz, y a `127.0.0.1:3001` para `/api/`, `/socket.io/` (con cabeceras `Upgrade` y `Connection`) y `/uploads/`.
+   - Habilitado enlace simbólico en `/etc/nginx/sites-enabled/`.
+   - Validada sintaxis con `nginx -t` y recargado Nginx.
+2. **Ajuste Frontend Dinámico (`client/src/App.jsx`)**:
+   - Ajustada la constante `API_URL` para que cuando el frontend se ejecute a través del dominio o proxy inverso utilice directamente `window.location.origin`, manteniendo la compatibilidad local/puerto directo en desarrollo.
+   - Compilado el cliente en producción (`npm run build`) y reiniciados los procesos PM2 `natoh-ui` y `natoh-api`.
 
-
+### Tarea Requerida del Usuario (Panel DonWeb)
+- Crear un registro **Tipo A**:
+  - **Nombre / Host:** `remarketing`
+  - **Destino / Valor:** `149.50.128.73`
+  - **TTL:** 300 segundos (o por defecto).
 

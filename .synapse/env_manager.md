@@ -8,6 +8,14 @@
 
 ## [P] Production (Debian VPS)
 - **Node:** v18+
-- **Process Manager:** PM2
-- **Port:** Configurable via `.env`
+- **VPS IP:** `149.50.128.73` (SSH Port: `5782`)
+- **Process Manager:** PM2 (`natoh-api` en 3001, `natoh-ui` en 8989)
+- **Domain:** `remarketing.nextemarketing.com`
+- **Reverse Proxy:** Nginx (`/etc/nginx/sites-available/remarketing.nextemarketing.com`)
+  - `/` -> `http://127.0.0.1:8989` (Frontend Vite Build)
+  - `/api/` -> `http://127.0.0.1:3001` (Backend Express)
+  - `/socket.io/` -> `http://127.0.0.1:3001` (WebSocket upgrades)
+  - `/uploads/` -> `http://127.0.0.1:3001` (Multimedia)
+- **SSL:** Certbot Let's Encrypt (pendiente de propagación DNS)
 - **Dependencies:** `chromium`, `libatk-bridge2.0-0`, etc (for Puppeteer)
+
