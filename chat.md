@@ -174,6 +174,21 @@ Adaptar la estrategia de mensajería del bot para responder a las nuevas solicit
 - Verificado script `seed-flow-antigravity.js` ejecutado en Node con éxito e insertado en la base de datos local SQLite.
 - Verificada la sintaxis de `server/index.js` y `server/database.js`.
 
+### Diagnóstico de Campaña en Servidor VPS (149.50.128.73)
+- **Problema Reportado:** El usuario indica que lanzó la campaña pero en la interfaz web no se ve enviando mensajes.
+- **Hallazgos:**
+  1. Conexión SSH establecida con éxito al VPS.
+  2. La Campaña 64 fue ejecutada con éxito pero finalizó en 15 segundos.
+  3. De los 1,727 contactos de la lista `[V] Luz o Hifu`:
+     - **1,673 contactos fueron saltados (`skipped`)**: Ocurrió porque el navegador tenía en memoria el filtro "Para siempre" (`ever`), y todos esos contactos habían recibido mensajes el 28 de agosto (hace 11 días). Al tener activo el filtro permanente, la base de datos los omitió a todos de forma instantánea.
+     - **54 contactos fallaron con `No LID for user`**: Se trataba de números mal guardados o sin cuenta de WhatsApp activa.
+  4. Dado que el 100% de la lista fue procesada entre saltados y errores en menos de 15 segundos, `activeCampaign` volvió a `null`, ocultando la barra de progreso en el front.
+- **Acciones Correctivas:**
+  1. Configuración por defecto de la ventana de exclusión en `7d` (7 días) tanto en el front (`client/src/App.jsx`) como en el motor backend (`server/index.js`). Como los envíos anteriores fueron el 28 de agosto (hace 11 días), ahora la lista de 1,673 contactos queda completamente habilitada para el nuevo envío de `EnvioAntigravity`.
+  2. Actualización de la barra de progreso en la cabecera para reportar el conteo de contactos excluidos en tiempo real y no dejar en silencio el estado.
+  3. Tratamiento de error en `server/whatsapp.js` para capturar `No LID` y clasificarlo limpiamente como contacto sin cuenta de WhatsApp o mal formateado.
+
+
 
 
 

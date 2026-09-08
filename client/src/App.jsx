@@ -120,7 +120,18 @@ function App() {
   });
 
   const [config, setConfig] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('antiSpamConfig') || '{"minLeadDelay":30,"maxLeadDelay":90,"minStepDelay":5,"maxStepDelay":15}'); } catch(e) { return {"minLeadDelay":30,"maxLeadDelay":90,"minStepDelay":5,"maxStepDelay":15}; }
+    try { 
+      const parsed = JSON.parse(localStorage.getItem('antiSpamConfig') || '{}');
+      return {
+        minLeadDelay: parsed.minLeadDelay ?? 30,
+        maxLeadDelay: parsed.maxLeadDelay ?? 90,
+        minStepDelay: parsed.minStepDelay ?? 5,
+        maxStepDelay: parsed.maxStepDelay ?? 15,
+        exclusionPeriod: parsed.exclusionPeriod || '7d'
+      };
+    } catch(e) { 
+      return { minLeadDelay: 30, maxLeadDelay: 90, minStepDelay: 5, maxStepDelay: 15, exclusionPeriod: '7d' }; 
+    }
   });
 
   useEffect(() => {
@@ -319,10 +330,10 @@ function App() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flex: 1, maxWidth: '450px', marginLeft: '2rem' }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', marginBottom: '4px' }}>
-                    <span style={{ fontWeight: 800 }}>⚡ {activeCampaign.sentCount} / {activeCampaign.total}</span>
+                    <span style={{ fontWeight: 800 }}>⚡ Enviados: {activeCampaign.sentCount} / Total: {activeCampaign.total} {activeCampaign.skippedCount > 0 ? `(${activeCampaign.skippedCount} excluidos)` : ''}</span>
                   </div>
                   <div style={{ height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '10px', overflow: 'hidden' }}>
-                    <div style={{ width: `${(activeCampaign.sentCount / activeCampaign.total) * 100}%`, height: '100%', background: 'var(--primary)', boxShadow: '0 0 10px var(--primary)' }} />
+                    <div style={{ width: `${(((activeCampaign.sentCount + (activeCampaign.skippedCount || 0)) / (activeCampaign.total || 1)) * 100).toFixed(1)}%`, height: '100%', background: 'var(--primary)', boxShadow: '0 0 10px var(--primary)' }} />
                   </div>
                 </div>
                 <button 
@@ -462,7 +473,7 @@ function App() {
                         <label htmlFor="exclusion-period" style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--primary)' }}>Filtro de Exclusión Anti-Spam:</label>
                         <select 
                           id="exclusion-period"
-                          value={config.exclusionPeriod === undefined ? (config.excludeEver ? 'ever' : 'none') : config.exclusionPeriod}
+                          value={config.exclusionPeriod || '7d'}
                           onChange={(e) => setConfig({...config, exclusionPeriod: e.target.value, excludeEver: e.target.value === 'ever'})}
                           style={{ background: 'var(--glass)', color: '#fff', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', padding: '6px 10px', fontSize: '0.8rem', cursor: 'pointer', outline: 'none' }}
                         >

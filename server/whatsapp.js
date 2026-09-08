@@ -245,10 +245,28 @@ const tagContactsByQuery = async (query, labelId, limit = 200) => {
 
 const sendMessage = async (to, content, media = null) => {
     if (!client) throw new Error('Bot apagado');
-    if (media) {
-        return await client.sendMessage(to, MessageMedia.fromFilePath(media), { caption: content });
+    let targetId = to;
+    try {
+        if (media) {
+            return await client.sendMessage(targetId, MessageMedia.fromFilePath(media), { caption: content });
+        }
+        return await client.sendMessage(targetId, content);
+    } catch (err) {
+        if (err.message && err.message.includes('No LID')) {
+            try {
+                const numberId = await client.getNumberId(to);
+                if (numberId && numberId._serialized) {
+                    targetId = numberId._serialized;
+                    if (media) {
+                        return await client.sendMessage(targetId, MessageMedia.fromFilePath(media), { caption: content });
+                    }
+                    return await client.sendMessage(targetId, content);
+                }
+            } catch (retryErr) {}
+            throw new Error('El número no está registrado en WhatsApp o es inválido (No LID)');
+        }
+        throw err;
     }
-    return await client.sendMessage(to, content);
 };
 
 let activeSearch = null;
@@ -419,11 +437,6 @@ const syncLabelsAndMembers = async () => {
     }
 };
 
-const debugEval = async (fn) => {
-    if (!client || !client.pupPage) throw new Error('Bot apagado o sin página');
-    return await client.pupPage.evaluate(fn);
-};
-
 module.exports = { 
     initWhatsApp, 
     startClient, 
@@ -440,8 +453,7 @@ module.exports = {
     cancelSearch,
     bulkTagChats,
     getActiveSearch,
-    syncLabelsAndMembers,
-    debugEval
+    syncLabelsAndMembers
 };
 
 

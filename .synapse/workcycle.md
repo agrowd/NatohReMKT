@@ -67,6 +67,12 @@
   - Integración de Depilación Definitiva con cupos limitados y CTA hacia consultorio en Corrientes 1466.
 - [x] Estructuración de campaña en 2 bloques con 3 variantes de texto cada una para evasión de bloqueos en WhatsApp.
 - [x] Creación del flujo guardado `EnvioAntigravity` y automatización de su inserción en SQLite vía `server/database.js` y `server/seed-flow-antigravity.js`.
+- [x] Diagnóstico en caliente por SSH en VPS (149.50.128.73:5782):
+  - Detección de por qué la Campaña 64 terminó en 15 segundos sin verse en el front: 1,673 contactos de la lista fueron saltados (`skipped`) porque el frontend tenía activo el filtro `ever` (memoria infinita) y todos habían sido contactados el 28 de agosto (>7 días atrás).
+  - Diagnóstico de error `No LID for user` en los 54 contactos restantes: corresponden a números inexistentes/mal formateados en la agenda VCF que no poseen cuenta en WhatsApp.
+  - Corrección de fallback en backend (`server/index.js`) para que por defecto aplique la ventana de 7 días y no excluya de forma permanente.
+  - Mejora en `client/src/App.jsx` para que el selector de exclusión use `7d` (1 semana) por defecto y la barra de progreso reporte en vivo tanto mensajes enviados como contactos excluidos en tiempo real.
+
 
 
 

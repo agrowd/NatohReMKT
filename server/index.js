@@ -5,7 +5,7 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const db = require('./database');
-const { initWhatsApp, startClient, stopClient, logout, getLabels, getContactsByLabel, syncAllContacts, deepSyncLabels, tagContactsByQuery, sendMessage, getStatus, searchMessagesInHistory, cancelSearch, bulkTagChats, getActiveSearch, syncLabelsAndMembers, debugEval } = require('./whatsapp');
+const { initWhatsApp, startClient, stopClient, logout, getLabels, getContactsByLabel, syncAllContacts, deepSyncLabels, tagContactsByQuery, sendMessage, getStatus, searchMessagesInHistory, cancelSearch, bulkTagChats, getActiveSearch, syncLabelsAndMembers } = require('./whatsapp');
 
 
 
@@ -114,16 +114,6 @@ app.post('/api/whatsapp/send-direct', async (req, res) => {
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
-    }
-});
-
-app.post('/api/whatsapp/debug-eval', async (req, res) => {
-    const { fnStr } = req.body;
-    try {
-        const result = await debugEval(new Function(fnStr));
-        res.json({ success: true, result });
-    } catch (err) {
-        res.status(500).json({ error: err.message, stack: err.stack });
     }
 });
 
@@ -681,18 +671,25 @@ async function delayWithCancelCheck(ms) {
 async function startCampaignProcess(campaignId, contacts, steps, config) {
     db.prepare('UPDATE campaigns SET status = ? WHERE id = ?').run('running', campaignId);
     let sentCount = 0;
+    let skippedCount = 0;
+    if (activeCampaign) {
+        activeCampaign.sentCount = 0;
+        activeCampaign.skippedCount = 0;
+    }
+
     for (const contact of contacts) {
         if (activeCampaign && activeCampaign.status === 'cancelled') {
             break;
         }
         try {
-            // Regla de Exclusión de 48 Horas o Permanente
-            // Regla de Exclusión Anti-Spam
-            let shouldExclude = false;
-            let timeFilter = "";
+            // Regla de Exclusión Anti-Spam (por defecto últimos 7 días)
+            let shouldExclude = true;
+            let timeFilter = "AND created_at > datetime('now', '-7 days')";
             
-            if (config.exclusionPeriod) {
-                if (config.exclusionPeriod === '48h') {
+            if (config && config.exclusionPeriod) {
+                if (config.exclusionPeriod === 'none') {
+                    shouldExclude = false;
+                } else if (config.exclusionPeriod === '48h') {
                     shouldExclude = true;
                     timeFilter = "AND created_at > datetime('now', '-48 hours')";
                 } else if (config.exclusionPeriod === '7d') {
@@ -702,15 +699,9 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
                     shouldExclude = true;
                     timeFilter = "";
                 }
-            } else {
-                // Retrocompatibilidad
-                if (config.excludeEver) {
-                    shouldExclude = true;
-                    timeFilter = "";
-                } else if (config.exclude48h) {
-                    shouldExclude = true;
-                    timeFilter = "AND created_at > datetime('now', '-48 hours')";
-                }
+            } else if (config && config.excludeEver) {
+                shouldExclude = true;
+                timeFilter = "";
             }
             
             if (shouldExclude) {
@@ -722,7 +713,14 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
                     ${timeFilter}
                 `).get(contact.id._serialized);
 
-                if (recentSend.count > 0) {
+                if (recentSend && recentSend.count > 0) {
+                    skippedCount++;
+                    if (activeCampaign) {
+                        activeCampaign.skippedCount = skippedCount;
+                        if (skippedCount % 5 === 0 || skippedCount === 1) {
+                            io.emit('campaign_progress', activeCampaign);
+                        }
+                    }
                     console.log(`[ENGINE] Saltando ${contact.id._serialized} (Ya enviado recientemente)`);
                     db.prepare('INSERT INTO logs (campaign_id, contact_id, status, message) VALUES (?, ?, ?, ?)').run(campaignId, contact.id._serialized, 'skipped', 'Excluido (Ya enviado recientemente)');
                     continue; // No lo contamos para el límite de lote si fue saltado
