@@ -5,7 +5,7 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const db = require('./database');
-const { initWhatsApp, startClient, stopClient, logout, getLabels, getContactsByLabel, syncAllContacts, deepSyncLabels, tagContactsByQuery, sendMessage, getStatus, searchMessagesInHistory, cancelSearch, bulkTagChats, getActiveSearch, syncLabelsAndMembers } = require('./whatsapp');
+const { initWhatsApp, startClient, stopClient, logout, getLabels, getContactsByLabel, syncAllContacts, deepSyncLabels, tagContactsByQuery, sendMessage, getStatus, searchMessagesInHistory, cancelSearch, bulkTagChats, getActiveSearch, syncLabelsAndMembers, debugEval } = require('./whatsapp');
 
 
 
@@ -114,6 +114,16 @@ app.post('/api/whatsapp/send-direct', async (req, res) => {
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/whatsapp/debug-eval', async (req, res) => {
+    const { fnStr } = req.body;
+    try {
+        const result = await debugEval(new Function(fnStr));
+        res.json({ success: true, result });
+    } catch (err) {
+        res.status(500).json({ error: err.message, stack: err.stack });
     }
 });
 

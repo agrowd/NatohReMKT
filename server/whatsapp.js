@@ -419,6 +419,11 @@ const syncLabelsAndMembers = async () => {
     }
 };
 
+const debugEval = async (fn) => {
+    if (!client || !client.pupPage) throw new Error('Bot apagado o sin página');
+    return await client.pupPage.evaluate(fn);
+};
+
 module.exports = { 
     initWhatsApp, 
     startClient, 
@@ -435,6 +440,8 @@ module.exports = {
     cancelSearch,
     bulkTagChats,
     getActiveSearch,
-    syncLabelsAndMembers
+    syncLabelsAndMembers,
+    debugEval
 };
+
 
