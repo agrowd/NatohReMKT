@@ -425,6 +425,61 @@ body {
   animation: spin 1s linear infinite;
 }
 
+/* --- Pairing Code Styles --- */
+.connect-mode-switch {
+  display: flex;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 4px;
+  border-radius: 12px;
+  border: 1px solid var(--glass-border);
+  margin-bottom: 1.25rem;
+  gap: 4px;
+}
+
+.connect-mode-btn {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.connect-mode-btn.active {
+  background: rgba(0, 255, 136, 0.15);
+  color: var(--primary);
+  box-shadow: 0 2px 10px rgba(0, 255, 136, 0.1);
+}
+
+.pairing-code-box {
+  background: #000;
+  border: 2px dashed var(--primary);
+  border-radius: 16px;
+  padding: 1.5rem 1rem;
+  margin: 1.25rem 0;
+  text-align: center;
+  box-shadow: 0 0 25px rgba(0, 255, 136, 0.12);
+}
+
+.pairing-code-digits {
+  font-family: 'SF Mono', 'Roboto Mono', 'Consolas', 'Courier New', monospace;
+  font-size: 2.2rem;
+  font-weight: 900;
+  letter-spacing: 5px;
+  color: var(--primary);
+  text-shadow: 0 0 15px rgba(0, 255, 136, 0.5);
+  user-select: all;
+  word-break: break-all;
+}
+
 /* ======================================================== */
 /* --- OPTIMIZACIÓN RESPONSIVA Y CELULAR (< 768px) --- */
 /* ======================================================== */

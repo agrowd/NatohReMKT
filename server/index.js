@@ -5,7 +5,7 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const db = require('./database');
-const { initWhatsApp, startClient, stopClient, logout, getLabels, getContactsByLabel, syncAllContacts, deepSyncLabels, tagContactsByQuery, sendMessage, getStatus, searchMessagesInHistory, cancelSearch, bulkTagChats, getActiveSearch, syncLabelsAndMembers } = require('./whatsapp');
+const { initWhatsApp, startClient, stopClient, logout, getLabels, getContactsByLabel, syncAllContacts, deepSyncLabels, tagContactsByQuery, sendMessage, getStatus, searchMessagesInHistory, cancelSearch, bulkTagChats, getActiveSearch, syncLabelsAndMembers, requestPairingCode, cancelPairingCode } = require('./whatsapp');
 
 
 
@@ -66,6 +66,24 @@ app.post('/api/whatsapp/stop', async (req, res) => {
 });
 app.post('/api/whatsapp/logout', async (req, res) => {
     try { await logout(); res.json({ success: true }); } catch (err) { res.status(500).json({ error: err.message }); }
+});
+app.post('/api/whatsapp/pair-phone', async (req, res) => {
+    const { phoneNumber } = req.body;
+    if (!phoneNumber) return res.status(400).json({ error: 'Falta el número de teléfono.' });
+    try {
+        const result = await requestPairingCode(phoneNumber);
+        res.json(result);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+app.post('/api/whatsapp/cancel-pair-phone', async (req, res) => {
+    try {
+        await cancelPairingCode();
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // --- Message Search & Tagging (Escenario B) ---

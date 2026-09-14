@@ -29,7 +29,9 @@ const Icon = ({ name, size = 20, color = "currentColor", onClick, style, classNa
     qr: <><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></>,
     x: <><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>,
     check: <polyline points="20 6 9 17 4 12"/>,
-    save: <><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></>
+    save: <><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></>,
+    copy: <><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></>,
+    phone: <><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></>
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" onClick={onClick} className={className} style={{ cursor: onClick ? 'pointer' : 'default', ...style }}>
@@ -77,6 +79,12 @@ function App() {
   const [status, setStatus] = useState('VERIFICANDO...');
   const [qr, setQr] = useState(null);
   const [showQrModal, setShowQrModal] = useState(false);
+  const [pairingCode, setPairingCode] = useState(null);
+  const [phoneToPair, setPhoneToPair] = useState('');
+  const [isRequestingPairing, setIsRequestingPairing] = useState(false);
+  const [pairingError, setPairingError] = useState('');
+  const [connectTab, setConnectTab] = useState('qr'); // 'qr' | 'phone'
+  const [copiedCode, setCopiedCode] = useState(false);
   const [mobileBuilderTab, setMobileBuilderTab] = useState('flow'); // 'flow' | 'audience'
   const [labels, setLabels] = useState([]);
   const [isSyncingLabels, setIsSyncingLabels] = useState(false);
@@ -147,7 +155,12 @@ function App() {
   useEffect(() => {
     if (!user) return;
     axios.get(`${API_URL}/api/whatsapp/status`).then(res => {
-      setStatus(res.data.status); setQr(res.data.qr);
+      setStatus(res.data.status); 
+      setQr(res.data.qr);
+      if (res.data.pairingCode) {
+        setPairingCode(res.data.pairingCode);
+        setConnectTab('phone');
+      }
       if (res.data.activeCampaign) setActiveCampaign(res.data.activeCampaign);
       if (res.data.activeSearch && res.data.activeSearch.status === 'running') {
         setIsSearching(true);
@@ -156,15 +169,27 @@ function App() {
       if (res.data.status === 'BOT ONLINE') fetchLabels();
     }).catch(() => setStatus('ERROR'));
 
-    socket.on('status', (s) => setStatus(s));
+    socket.on('status', (s) => {
+      setStatus(s);
+      if (s === 'DESCONECTADO') {
+        setPairingCode(null);
+      }
+    });
     socket.on('qr', (data) => { 
       setQr(data); 
       setStatus('ESPERANDO ESCANEO'); 
       setShowQrModal(true); 
     });
+    socket.on('pairing_code', (code) => {
+      setPairingCode(code);
+      setIsRequestingPairing(false);
+      setConnectTab('phone');
+      setShowQrModal(true);
+    });
     socket.on('ready', () => { 
       setStatus('BOT ONLINE'); 
       setQr(null); 
+      setPairingCode(null);
       fetchLabels(); 
       setTimeout(() => setShowQrModal(false), 1200);
     });
@@ -238,8 +263,215 @@ function App() {
       socket.off('search_progress'); 
       socket.off('search_match'); 
       socket.off('bulk_tag_progress'); 
+      socket.off('pairing_code');
     };
 }, [user]);
+
+  const handleRequestPairingCode = async (e) => {
+    if (e) e.preventDefault();
+    if (!phoneToPair.trim()) {
+      setPairingError('Por favor ingresá tu número de WhatsApp.');
+      return;
+    }
+    setIsRequestingPairing(true);
+    setPairingError('');
+    try {
+      const res = await axios.post(`${API_URL}/api/whatsapp/pair-phone`, { phoneNumber: phoneToPair });
+      if (res.data && res.data.code) {
+        setPairingCode(res.data.code);
+      }
+    } catch (err) {
+      setPairingError(err.response?.data?.error || err.message || 'Error al solicitar código.');
+    } finally {
+      setIsRequestingPairing(false);
+    }
+  };
+
+  const handleCopyCode = (code) => {
+    if (!code) return;
+    navigator.clipboard.writeText(code);
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 2500);
+  };
+
+  const renderConnectionBody = () => {
+    if (status === 'BOT ONLINE') {
+      return (
+        <div className="success-badge" style={{ padding: '1.5rem', margin: '1rem 0', textAlign: 'center' }}>
+          <Icon name="check" size={40} color="var(--primary)" style={{ margin: '0 auto 0.5rem' }} />
+          <div style={{ fontSize: '1.05rem', fontWeight: 800 }}>¡WhatsApp Conectado!</div>
+          <div style={{ fontSize: '0.8rem', opacity: 0.8, marginTop: '4px' }}>El bot está en línea y sincronizado con tu teléfono.</div>
+        </div>
+      );
+    }
+
+    return (
+      <div>
+        <div className="connect-mode-switch">
+          <button 
+            type="button"
+            className={`connect-mode-btn ${connectTab === 'qr' ? 'active' : ''}`}
+            onClick={() => setConnectTab('qr')}
+          >
+            <Icon name="qr" size={16} /> Escanear QR
+          </button>
+          <button 
+            type="button"
+            className={`connect-mode-btn ${connectTab === 'phone' ? 'active' : ''}`}
+            onClick={() => setConnectTab('phone')}
+          >
+            <Icon name="phone" size={16} /> Vincular con Teléfono
+          </button>
+        </div>
+
+        {connectTab === 'qr' ? (
+          qr ? (
+            <div>
+              <div className="qr-container">
+                <QRCode 
+                  value={qr} 
+                  size={240} 
+                  style={{ height: "auto", maxWidth: "100%", width: "100%" }}
+                  viewBox={`0 0 256 256`}
+                />
+              </div>
+              <div className="qr-step-box">
+                <div><b>1.</b> Abrí <b>WhatsApp</b> en tu celular</div>
+                <div><b>2.</b> Tocá <b>Menú ⋮</b> (Android) o <b>Configuración ⚙️</b> (iPhone)</div>
+                <div><b>3.</b> Entrá en <b>Dispositivos vinculados</b> y elegí <b>Vincular un dispositivo</b></div>
+                <div><b>4.</b> Apuntá la cámara a este código QR</div>
+              </div>
+              <div style={{ marginTop: '0.75rem', textAlign: 'center' }}>
+                <span style={{ fontSize: '0.75rem', opacity: 0.65 }}>
+                  ¿Tu celular dice <i>"no está disponible"</i>? Tocá la pestaña <b>"Vincular con Teléfono"</b> arriba.
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div style={{ padding: '2rem 1rem', background: 'rgba(255,255,255,0.02)', borderRadius: '16px', border: '1px dashed var(--glass-border)', margin: '1rem 0', textAlign: 'center' }}>
+              <p style={{ opacity: 0.7, fontSize: '0.88rem', marginBottom: '1.25rem' }}>El bot está desconectado o inicializando.</p>
+              <button 
+                type="button"
+                className="btn btn-primary" 
+                style={{ width: '100%' }}
+                onClick={() => axios.post(`${API_URL}/api/whatsapp/start`)}
+              >
+                ENCENDER BOT Y GENERAR QR
+              </button>
+            </div>
+          )
+        ) : (
+          pairingCode ? (
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '0.82rem', color: 'var(--text-dim)', marginBottom: '0.25rem' }}>
+                Código de vinculación para: <b style={{ color: '#fff' }}>{phoneToPair}</b>
+              </div>
+
+              <div className="pairing-code-box">
+                <div className="pairing-code-digits">
+                  {pairingCode.length === 8 
+                    ? `${pairingCode.slice(0, 4)} - ${pairingCode.slice(4)}` 
+                    : pairingCode}
+                </div>
+                <button 
+                  type="button"
+                  className="btn" 
+                  onClick={() => handleCopyCode(pairingCode)}
+                  style={{ 
+                    marginTop: '0.9rem', 
+                    background: copiedCode ? 'var(--primary)' : 'rgba(255,255,255,0.08)', 
+                    color: copiedCode ? '#000' : '#fff', 
+                    fontWeight: 700, 
+                    fontSize: '0.82rem' 
+                  }}
+                >
+                  <Icon name={copiedCode ? "check" : "copy"} size={14} /> {copiedCode ? '¡CÓDIGO COPIADO!' : 'COPIAR CÓDIGO'}
+                </button>
+              </div>
+
+              <div className="qr-step-box">
+                <div style={{ fontWeight: 800, color: 'var(--primary)', marginBottom: '6px' }}>📲 ¿Cómo ingresar el código en tu celular?</div>
+                <div><b>1.</b> Abrí <b>WhatsApp</b> en tu celular</div>
+                <div><b>2.</b> Tocá <b>Menú ⋮</b> o <b>Configuración ⚙️</b> &gt; <b>Dispositivos vinculados</b></div>
+                <div><b>3.</b> Tocá <b>Vincular un dispositivo</b></div>
+                <div><b>4.</b> Abajo del recuadro de la cámara, tocá <b>"¿Vincular con el número de teléfono?"</b></div>
+                <div><b>5.</b> Ingresá este código de 8 dígitos en la pantalla de tu celular</div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', marginTop: '1rem' }}>
+                <button 
+                  type="button"
+                  className="btn" 
+                  style={{ flex: 1, background: 'rgba(255,255,255,0.05)', fontSize: '0.8rem' }}
+                  onClick={() => { setPairingCode(null); }}
+                >
+                  Cambiar número
+                </button>
+                <button 
+                  type="button"
+                  className="btn btn-primary" 
+                  style={{ flex: 1, fontSize: '0.8rem' }}
+                  onClick={handleRequestPairingCode}
+                  disabled={isRequestingPairing}
+                >
+                  {isRequestingPairing ? 'Generando...' : 'Re-generar código'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <form onSubmit={handleRequestPairingCode} style={{ textAlign: 'left', marginTop: '0.5rem' }}>
+              <div style={{ padding: '0.85rem 1rem', background: 'rgba(0, 255, 136, 0.05)', border: '1px solid rgba(0, 255, 136, 0.15)', borderRadius: '12px', marginBottom: '1.25rem' }}>
+                <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Icon name="phone" size={16} /> Vinculación directa sin escanear QR
+                </div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-dim)', marginTop: '4px', lineHeight: 1.4 }}>
+                  Ideal si tu teléfono dice <i>"no está disponible"</i> al escanear. Ingresá el número y WhatsApp te dará un código de 8 caracteres para vincular.
+                </div>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '1.25rem' }}>
+                <label style={{ fontSize: '0.82rem', fontWeight: 700, display: 'block', marginBottom: '6px', color: '#fff' }}>
+                  Número de WhatsApp a vincular:
+                </label>
+                <input 
+                  type="tel"
+                  className="styled-input"
+                  placeholder="Ej: 11 2345 6789 o 5491123456789"
+                  value={phoneToPair}
+                  onChange={e => setPhoneToPair(e.target.value)}
+                  style={{ width: '100%', fontSize: '1rem', padding: '0.75rem 1rem', letterSpacing: '0.5px' }}
+                />
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)', display: 'block', marginTop: '5px' }}>
+                  🇦🇷 Para Argentina podés escribirlo simple (ej: 1123456789, sin 0 ni 15).
+                </span>
+              </div>
+
+              {pairingError && (
+                <div style={{ background: 'rgba(255,68,68,0.1)', color: '#ff6666', padding: '8px 12px', borderRadius: '8px', fontSize: '0.8rem', marginBottom: '1rem', border: '1px solid rgba(255,68,68,0.2)' }}>
+                  ⚠️ {pairingError}
+                </div>
+              )}
+
+              <button 
+                type="submit"
+                className="btn btn-primary"
+                style={{ width: '100%', padding: '0.85rem', fontWeight: 800, fontSize: '0.88rem' }}
+                disabled={isRequestingPairing}
+              >
+                {isRequestingPairing ? (
+                  <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                    <Icon name="refresh" size={16} className="spin-animation" /> GENERANDO CÓDIGO (AGUARDA 5s)...
+                  </span>
+                ) : (
+                  'GENERAR CÓDIGO DE 8 DÍGITOS'
+                )}
+              </button>
+            </form>
+          )
+        )}
+      </div>
+    );
+  };
 
   const fetchLabels = async (sync = false) => { 
     try { 
@@ -311,12 +543,12 @@ function App() {
             
             {/* Indicador de Estado / Botón rápido de QR */}
             <div 
-              className={`status-pill ${status === 'BOT ONLINE' ? 'status-online' : (status === 'ESPERANDO ESCANEO' || qr) ? 'status-qr' : 'status-offline'}`}
+              className={`status-pill ${status === 'BOT ONLINE' ? 'status-online' : (status === 'ESPERANDO ESCANEO' || qr || pairingCode) ? 'status-qr' : 'status-offline'}`}
               onClick={() => setShowQrModal(true)}
               title="Tocar para ver código QR o estado de WhatsApp"
             >
               <div className={`dot ${status === 'BOT ONLINE' ? 'dot-ready' : 'dot-waiting'}`} />
-              <span>{status === 'BOT ONLINE' ? 'BOT ONLINE' : qr ? '📲 ESCANEAR QR' : status}</span>
+              <span>{status === 'BOT ONLINE' ? 'BOT ONLINE' : (qr || pairingCode) ? '📲 VINCULAR BOT' : status}</span>
             </div>
 
             {activeCampaign && (
@@ -368,8 +600,8 @@ function App() {
           </div>
         </header>
 
-        {/* Banner flotante de QR listo cuando el modal está cerrado */}
-        {qr && !showQrModal && (
+        {/* Banner flotante de vinculación cuando el modal está cerrado */}
+        {(qr || pairingCode) && !showQrModal && (
           <div 
             onClick={() => setShowQrModal(true)}
             style={{
@@ -387,11 +619,11 @@ function App() {
             }}
           >
             <Icon name="connection" size={16} color="#000" />
-            <span>⚠️ CÓDIGO QR LISTO: TOCÁ ACÁ PARA ESCANEAR CON TU CELULAR</span>
+            <span>⚠️ VINCULACIÓN LISTA: TOCÁ ACÁ PARA VINCULAR TU WHATSAPP (QR O TELÉFONO)</span>
           </div>
         )}
 
-        {/* MODAL RESPONSIVO DE ESCANEO DE QR */}
+        {/* MODAL RESPONSIVO DE CONEXIÓN */}
         {showQrModal && (
           <div className="qr-modal-backdrop" onClick={() => setShowQrModal(false)}>
             <div className="qr-modal-card" onClick={e => e.stopPropagation()}>
@@ -408,44 +640,10 @@ function App() {
                 </button>
               </div>
 
-              {status === 'BOT ONLINE' ? (
-                <div className="success-badge" style={{ padding: '1.5rem', marginBottom: '1rem' }}>
-                  <Icon name="check" size={40} color="var(--primary)" style={{ margin: '0 auto 0.5rem' }} />
-                  <div style={{ fontSize: '1.05rem', fontWeight: 800 }}>¡WhatsApp Conectado!</div>
-                  <div style={{ fontSize: '0.8rem', opacity: 0.8, marginTop: '4px' }}>El bot está en línea y sincronizado con tu teléfono.</div>
-                </div>
-              ) : qr ? (
-                <>
-                  <div className="qr-container">
-                    <QRCode 
-                      value={qr} 
-                      size={240} 
-                      style={{ height: "auto", maxWidth: "100%", width: "100%" }}
-                      viewBox={`0 0 256 256`}
-                    />
-                  </div>
-                  <div className="qr-step-box">
-                    <div><b>1.</b> Abrí WhatsApp en tu celular</div>
-                    <div><b>2.</b> Tocá <b>Menú ⋮</b> (Android) o <b>Configuración ⚙️</b> (iPhone)</div>
-                    <div><b>3.</b> Entrá en <b>Dispositivos vinculados</b> y elegí <b>Vincular un dispositivo</b></div>
-                    <div><b>4.</b> Apuntá la cámara a este código QR</div>
-                  </div>
-                </>
-              ) : (
-                <div style={{ padding: '2rem 1rem', background: 'rgba(255,255,255,0.02)', borderRadius: '16px', border: '1px dashed var(--glass-border)', margin: '1rem 0' }}>
-                  <p style={{ opacity: 0.7, fontSize: '0.88rem', marginBottom: '1.25rem' }}>El bot está desconectado o inicializando.</p>
-                  <button 
-                    className="btn btn-primary" 
-                    style={{ width: '100%' }}
-                    onClick={() => axios.post(`${API_URL}/api/whatsapp/start`)}
-                  >
-                    ENCENDER BOT Y GENERAR QR
-                  </button>
-                </div>
-              )}
+              {renderConnectionBody()}
 
-              <div style={{ display: 'flex', gap: '8px', marginTop: '1rem', flexWrap: 'wrap' }}>
-                {qr && (
+              <div style={{ display: 'flex', gap: '8px', marginTop: '1.25rem', flexWrap: 'wrap' }}>
+                {connectTab === 'qr' && qr && (
                   <button 
                     className="btn" 
                     style={{ flex: 1, minWidth: '120px', background: 'rgba(255,255,255,0.05)', fontSize: '0.8rem' }}
@@ -706,54 +904,31 @@ function App() {
 
         {activeTab === 'connection' && (
            <div className="workspace" style={{ display: 'flex', justifyContent: 'center' }}>
-              <div className="glass-card" style={{ textAlign: 'center', maxWidth: '480px', width: '100%' }}>
-                <Icon name="connection" size={50} color={status === 'BOT ONLINE' ? 'var(--primary)' : '#ffaa00'} />
-                <h2 style={{ margin: '1rem 0 0.5rem 0', fontSize: '1.4rem' }}>Conexión WhatsApp</h2>
-                <p style={{ fontSize: '0.85rem', opacity: 0.6, marginBottom: '1.5rem' }}>
-                  Estado actual: <b style={{ color: status === 'BOT ONLINE' ? 'var(--primary)' : '#ffaa00' }}>{status}</b>
-                </p>
+              <div className="glass-card" style={{ maxWidth: '480px', width: '100%' }}>
+                <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
+                  <Icon name="connection" size={50} color={status === 'BOT ONLINE' ? 'var(--primary)' : '#ffaa00'} />
+                  <h2 style={{ margin: '1rem 0 0.5rem 0', fontSize: '1.4rem' }}>Conexión WhatsApp</h2>
+                  <p style={{ fontSize: '0.85rem', opacity: 0.6, marginBottom: '1.5rem' }}>
+                    Estado actual: <b style={{ color: status === 'BOT ONLINE' ? 'var(--primary)' : '#ffaa00' }}>{status}</b>
+                  </p>
 
-                <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
-                  <button className="btn btn-primary" style={{ flex: 1, minWidth: '140px' }} onClick={() => axios.post(`${API_URL}/api/whatsapp/start`)}>
-                    <Icon name="refresh" size={16} /> ENCENDER / REINICIAR
-                  </button>
-                  <button className="btn" style={{ flex: 1, minWidth: '120px', background: 'rgba(255,68,68,0.1)', color: '#ff4444', border: '1px solid rgba(255,68,68,0.2)' }} onClick={() => axios.post(`${API_URL}/api/whatsapp/stop`)}>
-                    APAGAR
-                  </button>
+                  <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+                    <button className="btn btn-primary" style={{ flex: 1, minWidth: '140px' }} onClick={() => axios.post(`${API_URL}/api/whatsapp/start`)}>
+                      <Icon name="refresh" size={16} /> ENCENDER / REINICIAR
+                    </button>
+                    <button className="btn" style={{ flex: 1, minWidth: '120px', background: 'rgba(255,68,68,0.1)', color: '#ff4444', border: '1px solid rgba(255,68,68,0.2)' }} onClick={() => axios.post(`${API_URL}/api/whatsapp/stop`)}>
+                      APAGAR
+                    </button>
+                  </div>
                 </div>
 
-                {qr ? (
-                  <div>
-                    <div className="qr-container">
-                      <QRCode 
-                        value={qr} 
-                        size={240} 
-                        style={{ height: "auto", maxWidth: "100%", width: "100%" }}
-                        viewBox={`0 0 256 256`}
-                      />
-                    </div>
-                    <div className="qr-step-box">
-                      <div><b>1.</b> Abrí WhatsApp en tu celular</div>
-                      <div><b>2.</b> Tocá <b>Menú ⋮</b> o <b>Configuración ⚙️</b></div>
-                      <div><b>3.</b> Entrá en <b>Dispositivos vinculados</b> y tocá <b>Vincular un dispositivo</b></div>
-                      <div><b>4.</b> Apuntá la cámara a este código QR</div>
-                    </div>
-                  </div>
-                ) : status === 'BOT ONLINE' ? (
-                  <div className="success-badge" style={{ margin: '1rem 0', padding: '1.5rem' }}>
-                    <Icon name="check" size={40} color="var(--primary)" style={{ margin: '0 auto 0.5rem' }} />
-                    <div style={{ fontSize: '1.1rem', fontWeight: 800 }}>✅ BOT CONECTADO CORRECTAMENTE</div>
-                    <div style={{ fontSize: '0.8rem', opacity: 0.8, marginTop: '4px' }}>Listo para procesar contactos y enviar campañas.</div>
-                  </div>
-                ) : (
-                  <div style={{ padding: '2rem 1rem', background: 'rgba(255,255,255,0.02)', borderRadius: '16px', border: '1px dashed var(--glass-border)', margin: '1rem 0' }}>
-                    <p style={{ opacity: 0.6, fontSize: '0.88rem' }}>El bot está apagado. Hacé click en "ENCENDER" para generar un nuevo código QR.</p>
-                  </div>
-                )}
+                {renderConnectionBody()}
 
-                <button className="btn" style={{ marginTop: '1.5rem', width: '100%', background: 'rgba(255,255,255,0.04)', color: '#ff4444', border: '1px solid rgba(255,68,68,0.15)', fontSize: '0.82rem' }} onClick={() => { if(confirm("¿Cerrar sesión de WhatsApp en el servidor y desvincular?")) axios.post(`${API_URL}/api/whatsapp/logout`).then(() => window.location.reload()) }}>
-                  DESVINCULAR / CERRAR SESIÓN DE WHATSAPP
-                </button>
+                {status === 'BOT ONLINE' && (
+                  <button className="btn" style={{ marginTop: '1.5rem', width: '100%', background: 'rgba(255,255,255,0.04)', color: '#ff4444', border: '1px solid rgba(255,68,68,0.15)', fontSize: '0.82rem' }} onClick={() => { if(confirm("¿Cerrar sesión de WhatsApp en el servidor y desvincular?")) axios.post(`${API_URL}/api/whatsapp/logout`).then(() => window.location.reload()) }}>
+                    DESVINCULAR / CERRAR SESIÓN DE WHATSAPP
+                  </button>
+                )}
               </div>
            </div>
         )}

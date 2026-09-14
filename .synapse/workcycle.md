@@ -90,3 +90,12 @@
   - Pestañas secundarias en el Constructor de Campañas para alternar limpiamente entre "Mensajes" y "Destinatarios" sin scroll interminable.
   - Adaptación de grillas a columnas flexibles (delays, buscador inteligente, tarjetas).
 - [x] Despliegue en VPS (commit `6e37fa8`), rebuild con `npm run build` y reinicio de `natoh-ui`. Verificada carga en vivo 200 OK.
+## Sesión: 2026-09-14 (Actual)
+- [x] Implementación de Vinculación de WhatsApp por Número de Teléfono (Pairing Code) como alternativa al código QR:
+  - Soporte en backend (`server/whatsapp.js`) para `requestPairingCode(phoneNumber)` y `cancelPairingCode()`.
+  - Exposición de endpoints `POST /api/whatsapp/pair-phone` y `POST /api/whatsapp/cancel-pair-phone` en Express (`server/index.js`).
+  - Normalizador inteligente de números de teléfono (`sanitizePairingNumber` con formato internacional sin símbolos, remoción de 15/0 y agregado de 549 para Argentina).
+  - Integración en frontend React (`client/src/App.jsx` e `index.css`) con selector visual entre "📷 Código QR" y "📱 Vincular con Teléfono", visualizador de código de 8 dígitos de alto contraste, botón de copiado rápido e instrucciones paso a paso.
+  - Sincronización en tiempo real vía Socket.io (`pairing_code`).
+  - Rebuild local exitoso de Vite en `client`.
+

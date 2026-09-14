@@ -249,3 +249,28 @@ Configurar el subdominio `remarketing.nextemarketing.com` apuntando a la IP del 
 - Compilación en Vite local completada con éxito (`dist/assets/index-DHY75V__.js` y `index-Dr3eevhI.css`).
 - Subida a GitHub (`main`) y desplegado en el VPS (`cd /srv/NatohReMKT && git pull && cd client && npm install && npm run build && pm2 restart natoh-ui`).
 - Verificado estado `200 OK` en producción bajo `https://remarketing.nextemarketing.com`.
+
+## Historial de Conversación - 2026-09-14 (Vinculación WhatsApp por Número de Teléfono / Pairing Code)
+
+### Requerimiento
+El cliente tiene problemas para conectar el bot mediante el código QR (WhatsApp en el móvil indica que "no está disponible"). Se consulta si es posible conectar directamente mediante el número de teléfono.
+
+### Solución Técnica
+1. **Investigación e Integración de API Nativa:**
+   - `whatsapp-web.js` cuenta de forma nativa con el método `requestPairingCode(phoneNumber, showNotification = true, intervalMs = 180000)` y el evento `code` (`Events.CODE_RECEIVED`).
+   - Se verificó su presencia tanto en el entorno local como en el VPS remoto de producción.
+2. **Backend (`server/whatsapp.js` & `server/index.js`):**
+   - Agregada variable de estado `lastPairingCode` expuesta en `getStatus()`.
+   - Registrado listener `client.on('code', (code) => { ... })` con emisión en tiempo real por Socket.io (`pairing_code`).
+   - Creada función sanitizadora `sanitizePairingNumber(raw)` que normaliza números argentinos (agrega prefijo internacional 549, remueve 15 intermedio o 0 inicial) y números de otros países a sólo dígitos.
+   - Implementada función `requestPairingCode(phoneNumber)` y `cancelPairingCode()`.
+   - Expuestos endpoints `POST /api/whatsapp/pair-phone` y `POST /api/whatsapp/cancel-pair-phone`.
+3. **Frontend React (`client/src/App.jsx` & `client/src/index.css`):**
+   - Incorporado selector tipo pestaña en el modal de conexión y en la vista de Conexión: `[ 📷 Escanear QR ]` y `[ 📱 Vincular con Teléfono ]`.
+   - En la pestaña de teléfono:
+     - Formulario simple donde el usuario ingresa su número móvil.
+     - Botón "GENERAR CÓDIGO DE 8 DÍGITOS" con estado de carga.
+     - Tarjeta de alto contraste con tipografía monoespaciada para el código de 8 dígitos generado (`ABCD - 1234`).
+     - Botón de 1-tap para copiar el código al portapapeles.
+     - Instrucciones claras paso a paso para introducir el código en la app de WhatsApp del celular (*Menú ⋮ / Configuración ⚙️ > Dispositivos vinculados > Vincular un dispositivo > "¿Vincular con el número de teléfono?"*).
+   - Banner superior flotante actualizado para avisar de la disponibilidad de ambos métodos de vinculación.

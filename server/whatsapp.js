@@ -7,6 +7,7 @@ let client = null;
 let io = null;
 let currentStatus = 'DESCONECTADO';
 let lastQr = null;
+let lastPairingCode = null;
 let isSyncing = false;
 
 const initWhatsApp = (socketIo) => {
@@ -17,6 +18,7 @@ const initWhatsApp = (socketIo) => {
 const getStatus = () => ({
     status: currentStatus,
     qr: lastQr,
+    pairingCode: lastPairingCode,
     isSyncing
 });
 
@@ -25,6 +27,7 @@ const startClient = async () => {
 
     currentStatus = 'INICIANDO';
     lastQr = null;
+    lastPairingCode = null;
     if (io) io.emit('status', currentStatus);
 
     console.log('--- STARTING WHATSAPP CLIENT ---');
@@ -38,6 +41,7 @@ const startClient = async () => {
 
     client.on('qr', (qr) => {
         lastQr = qr;
+        lastPairingCode = null;
         currentStatus = 'ESPERANDO ESCANEO';
         console.log('--- QR RECEIVED ---');
         if (io) {
@@ -46,9 +50,19 @@ const startClient = async () => {
         }
     });
 
+    client.on('code', (code) => {
+        lastPairingCode = code;
+        console.log('--- PAIRING CODE RECEIVED:', code, '---');
+        if (io) {
+            io.emit('pairing_code', code);
+            io.emit('status', currentStatus);
+        }
+    });
+
     client.on('ready', async () => {
         currentStatus = 'BOT ONLINE';
         lastQr = null;
+        lastPairingCode = null;
         console.log('--- CLIENT READY ---');
         if (io) {
             io.emit('ready', true);
@@ -65,6 +79,7 @@ const startClient = async () => {
     client.on('disconnected', () => {
         currentStatus = 'DESCONECTADO';
         lastQr = null;
+        lastPairingCode = null;
         console.log('--- DISCONNECTED ---');
         if (io) io.emit('status', currentStatus);
         client = null;
@@ -86,6 +101,7 @@ const stopClient = async () => {
         client = null;
         currentStatus = 'DESCONECTADO';
         lastQr = null;
+        lastPairingCode = null;
         if (io) io.emit('status', currentStatus);
     }
 };
@@ -437,6 +453,91 @@ const syncLabelsAndMembers = async () => {
     }
 };
 
+const sanitizePairingNumber = (raw) => {
+    if (!raw) return '';
+    let digits = raw.replace(/\D/g, '');
+    if (digits.startsWith('00')) digits = digits.substring(2);
+    if (digits.startsWith('0')) digits = digits.substring(1);
+    
+    if (digits.startsWith('54')) {
+        if (digits.startsWith('54915')) {
+            digits = '549' + digits.substring(5);
+        } else if (digits.startsWith('5415')) {
+            digits = '549' + digits.substring(4);
+        } else if (!digits.startsWith('549')) {
+            if (digits.length === 12) {
+                digits = '549' + digits.substring(2);
+            }
+        }
+    } else {
+        if (digits.length === 10) {
+            digits = '549' + digits;
+        } else if (digits.startsWith('15') && digits.length === 11) {
+            digits = '549' + digits.substring(2);
+        } else if (digits.includes('15') && digits.length >= 11 && digits.length <= 13) {
+            const idx = digits.indexOf('15');
+            if (idx > 0 && idx < 5) {
+                const without15 = digits.substring(0, idx) + digits.substring(idx + 2);
+                if (without15.length === 10) {
+                    digits = '549' + without15;
+                }
+            }
+        } else if (digits.length === 11 && digits.startsWith('9')) {
+            digits = '54' + digits;
+        }
+    }
+    return digits;
+};
+
+const requestPairingCode = async (phoneNumber) => {
+    const cleanNumber = sanitizePairingNumber(phoneNumber);
+    if (!cleanNumber || cleanNumber.length < 8) {
+        throw new Error('Número de teléfono inválido. Ingrese código de país y número (ej: 11 2345 6789 o 5491123456789).');
+    }
+
+    console.log(`[PAIRING] Solicitando código de vinculación para: ${cleanNumber}`);
+
+    if (!client) {
+        startClient();
+    }
+
+    // Esperar a que el navegador esté listo para vincular
+    const maxWaitMs = 30000;
+    const startTime = Date.now();
+    while ((!client || !client.pupPage) && Date.now() - startTime < maxWaitMs) {
+        await new Promise(r => setTimeout(r, 500));
+    }
+
+    if (!client || !client.pupPage) {
+        throw new Error('El navegador de WhatsApp está iniciando. Por favor espera 10 segundos y volvé a presionar "Generar Código".');
+    }
+
+    try {
+        const code = await client.requestPairingCode(cleanNumber);
+        lastPairingCode = code;
+        console.log(`[PAIRING] Código generado exitosamente: ${code}`);
+        if (io) {
+            io.emit('pairing_code', code);
+        }
+        return { success: true, code, phoneNumber: cleanNumber };
+    } catch (err) {
+        console.error('[PAIRING ERROR]:', err.message);
+        throw new Error(err.message || 'Error al comunicarse con WhatsApp Web para generar el código.');
+    }
+};
+
+const cancelPairingCode = async () => {
+    lastPairingCode = null;
+    if (client && client.pupPage) {
+        try {
+            await client.cancelPairingCode();
+        } catch (e) {
+            console.error('Error al cancelar código:', e.message);
+        }
+    }
+    return { success: true };
+};
+
 module.exports = { 
     initWhatsApp, 
     startClient, 
@@ -453,7 +554,10 @@ module.exports = {
     cancelSearch,
     bulkTagChats,
     getActiveSearch,
-    syncLabelsAndMembers
+    syncLabelsAndMembers,
+    requestPairingCode,
+    cancelPairingCode,
+    sanitizePairingNumber
 };
 
 
