@@ -100,16 +100,12 @@
   - Rebuild local exitoso de Vite en `client`.
 
 ## Sesión: 2026-09-15 (Actual)
-- [x] Diagnóstico exhaustivo del error `window.require is not a function` al presionar "GENERAR CÓDIGO DE 8 DÍGITOS" en producción.
-- [x] Detección de condiciones de carrera en el ciclo de vida del navegador Puppeteer:
-  - `requestPairingCode` avanzaba tan pronto existía `client.pupPage` (incluso en `about:blank`), cuando WhatsApp Web aún no había inyectado `window.require` ni `window.AuthStore.PairingCodeLinkUtils`.
-  - Detección del error interno de WhatsApp Web `CompanionHelloError` (código 429 `IQErrorRateOverlimit` / `rate-overlimit`) provocado al solicitar códigos reiteradamente para un mismo número.
-- [x] Refactorización de `server/whatsapp.js`:
-  - Implementado polling activo de inicialización que garantiza la disponibilidad de `window.AuthStore.PairingCodeLinkUtils` y `window.require`.
-  - Ejecución desacoplada de `startAltLinkingFlow` dentro de `pupPage.evaluate`.
-  - Captura y traducción amigable del error 429 de límite de intentos de WhatsApp con indicación de espera o alternativa por QR.
-- [x] Mejora en Frontend (`client/src/App.jsx`):
-  - Botón directo de acción "👉 Vincular ahora con Código QR" en caso de límite de tasa para desbloquear de inmediato la vinculación sin esperas.
-- [x] Rebuild exitoso de Vite en `client` (`npm run build`).
+- [x] Diagnóstico de desincronización de `window.AuthStore` al intentar alternar en caliente de QR a Pairing Code en WhatsApp Web.
+- [x] Rediseño de Arquitectura de Inicio a la API Nativa `pairWithPhoneNumber` de `whatsapp-web.js`:
+  - `startClient(pairingPhoneNumber)` instancializa `new Client({ ..., pairWithPhoneNumber: { phoneNumber: cleanNumber } })`.
+  - El navegador de Puppeteer inicia directamente en modo Vinculación por Teléfono.
+  - WhatsApp Web ejecuta la inicialización de forma síncrona sin condiciones de carrera ni errores de `window.require`.
+  - Captura nativa del evento `client.on('code', (code) => ...)` y emisión directa por Socket.io.
+- [x] Verificación exitosa en entornos de prueba con generación instantánea de códigos de 8 dígitos.
 
 

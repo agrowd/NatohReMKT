@@ -22,22 +22,42 @@ const getStatus = () => ({
     isSyncing
 });
 
-const startClient = async () => {
-    if (client) return; // Ya esta intentando o conectado
+const startClient = async (pairingPhoneNumber = null) => {
+    // Si ya existe un cliente y queremos cambiar de modo o de número, destruimos la instancia previa
+    if (client) {
+        if (pairingPhoneNumber && lastPairingCode && currentStatus === 'CÓDIGO GENERADO') {
+            return;
+        }
+        try {
+            await client.destroy();
+        } catch (e) {}
+        client = null;
+    }
 
-    currentStatus = 'INICIANDO';
+    currentStatus = pairingPhoneNumber ? 'GENERANDO CÓDIGO' : 'INICIANDO';
     lastQr = null;
     lastPairingCode = null;
     if (io) io.emit('status', currentStatus);
 
-    console.log('--- STARTING WHATSAPP CLIENT ---');
-    client = new Client({
+    console.log(`--- STARTING WHATSAPP CLIENT (Mode: ${pairingPhoneNumber ? 'Pairing Code (' + pairingPhoneNumber + ')' : 'QR Code'}) ---`);
+
+    const clientOptions = {
         authStrategy: new LocalAuth({ dataPath: './sessions' }),
         puppeteer: {
             headless: true,
             args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
         }
-    });
+    };
+
+    if (pairingPhoneNumber) {
+        clientOptions.pairWithPhoneNumber = {
+            phoneNumber: pairingPhoneNumber,
+            showNotification: true,
+            intervalMs: 180000
+        };
+    }
+
+    client = new Client(clientOptions);
 
     client.on('qr', (qr) => {
         lastQr = qr;
@@ -52,6 +72,7 @@ const startClient = async () => {
 
     client.on('code', (code) => {
         lastPairingCode = code;
+        currentStatus = 'CÓDIGO GENERADO';
         console.log('--- PAIRING CODE RECEIVED:', code, '---');
         if (io) {
             io.emit('pairing_code', code);
@@ -495,81 +516,28 @@ const requestPairingCode = async (phoneNumber) => {
         throw new Error('Número de teléfono inválido. Ingrese código de país y número (ej: 11 2345 6789 o 5491123456789).');
     }
 
-    console.log(`[PAIRING] Solicitando código de vinculación para: ${cleanNumber}`);
+    console.log(`[PAIRING] Inicializando vinculación por código nativo para: ${cleanNumber}`);
 
-    if (!client) {
-        startClient();
-    }
+    // Iniciar o reiniciar el cliente con la opción nativa pairWithPhoneNumber
+    await startClient(cleanNumber);
 
-    // Esperar a que el navegador de WhatsApp Web esté completamente cargado y con los módulos listos
-    const maxWaitMs = 30000;
+    // Esperar a que whatsapp-web.js emita el evento nativo 'code'
+    const maxWaitMs = 35000;
     const startTime = Date.now();
-    let isReady = false;
 
-    while (Date.now() - startTime < maxWaitMs) {
-        if (client && client.pupPage) {
-            try {
-                isReady = await client.pupPage.evaluate(() => {
-                    return typeof window.AuthStore !== 'undefined' && 
-                           typeof window.AuthStore.PairingCodeLinkUtils !== 'undefined' &&
-                           typeof window.require === 'function';
-                });
-                if (isReady) break;
-            } catch (e) {
-                // El navegador puede estar navegando o cargando recursos
-            }
-        }
+    while (!lastPairingCode && currentStatus !== 'BOT ONLINE' && currentStatus !== 'DESCONECTADO' && Date.now() - startTime < maxWaitMs) {
         await new Promise(r => setTimeout(r, 500));
     }
 
-    if (!client || !client.pupPage || !isReady) {
-        throw new Error('El navegador de WhatsApp aún está iniciando sus servicios. Por favor aguardá 10 segundos y volvé a presionar "Generar Código".');
+    if (lastPairingCode) {
+        return { success: true, code: lastPairingCode, phoneNumber: cleanNumber };
     }
 
-    try {
-        const result = await client.pupPage.evaluate(async (cleanPhone) => {
-            const utils = window.AuthStore?.PairingCodeLinkUtils;
-            if (!utils) {
-                return { ok: false, error: 'Módulo de vinculación no disponible. Aguarde unos segundos y reintente.' };
-            }
-            try {
-                utils.setPairingType('ALT_DEVICE_LINKING');
-                await utils.initializeAltDeviceLinking();
-                const code = await utils.startAltLinkingFlow(cleanPhone, true);
-                return { ok: true, code };
-            } catch (e) {
-                const isRateLimit = e.name === 'CompanionHelloError' || 
-                                    e.type?.name === 'IQErrorRateOverlimit' || 
-                                    e.type?.value?.code === 429 || 
-                                    e.type?.value?.text === 'rate-overlimit';
-                if (isRateLimit) {
-                    return { 
-                        ok: false, 
-                        rateLimit: true,
-                        error: 'WhatsApp limitó temporalmente las solicitudes para este número (límite de intentos alcanzado). Esperá unos 5-10 minutos antes de volver a solicitar un código para este teléfono, o vinculá con el Código QR.' 
-                    };
-                }
-                const msg = (e.message && e.message !== 't') ? e.message : (e.name || 'Error en WhatsApp Web al generar código.');
-                return { ok: false, error: msg };
-            }
-        }, cleanNumber);
-
-        if (!result.ok) {
-            console.error('[PAIRING ERROR]:', result.error);
-            throw new Error(result.error);
-        }
-
-        const code = result.code;
-        lastPairingCode = code;
-        console.log(`[PAIRING] Código generado exitosamente: ${code}`);
-        if (io) {
-            io.emit('pairing_code', code);
-        }
-        return { success: true, code, phoneNumber: cleanNumber };
-    } catch (err) {
-        console.error('[PAIRING EXCEPTION]:', err.message);
-        throw new Error(err.message || 'Error al comunicarse con WhatsApp Web para generar el código.');
+    if (currentStatus === 'BOT ONLINE') {
+        return { success: true, alreadyOnline: true, message: '¡El bot ya se encuentra en línea y conectado!' };
     }
+
+    throw new Error('No se pudo obtener el código a tiempo. Si WhatsApp limitó los intentos para esta línea, aguardá unos minutos antes de reintentar o utilizá el escaneo QR.');
 };
 
 const cancelPairingCode = async () => {
@@ -594,26 +562,6 @@ const cancelPairingCode = async () => {
     return { success: true };
 };
 
-const debugPairingState = async () => {
-    if (!client) return { hasClient: false, status: currentStatus };
-    if (!client.pupPage) return { hasClient: true, hasPupPage: false, status: currentStatus };
-    try {
-        const evalInfo = await client.pupPage.evaluate(() => {
-            return {
-                url: window.location.href,
-                hasRequire: typeof window.require,
-                hasAuthStore: typeof window.AuthStore,
-                hasPairingUtils: typeof window.AuthStore?.PairingCodeLinkUtils,
-                hasDebug: typeof window.Debug,
-                authStoreKeys: window.AuthStore ? Object.keys(window.AuthStore) : null
-            };
-        });
-        return { hasClient: true, hasPupPage: true, status: currentStatus, evalInfo };
-    } catch (e) {
-        return { hasClient: true, hasPupPage: true, status: currentStatus, error: e.message };
-    }
-};
-
 module.exports = { 
     initWhatsApp, 
     startClient, 
@@ -633,6 +581,5 @@ module.exports = {
     syncLabelsAndMembers,
     requestPairingCode,
     cancelPairingCode,
-    debugPairingState,
     sanitizePairingNumber
 };

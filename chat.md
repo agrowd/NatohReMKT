@@ -275,27 +275,25 @@ El cliente tiene problemas para conectar el bot mediante el código QR (WhatsApp
      - Instrucciones claras paso a paso para introducir el código en la app de WhatsApp del celular (*Menú ⋮ / Configuración ⚙️ > Dispositivos vinculados > Vincular un dispositivo > "¿Vincular con el número de teléfono?"*).
    - Banner superior flotante actualizado para avisar de la disponibilidad de ambos métodos de vinculación.
 
-## Historial de Conversación - 2026-09-15 (Resolución de Error 'window.require is not a function')
+## Historial de Conversación - 2026-09-15 (Arquitectura Nativa de Vinculación por Código)
 
 ### Requerimiento / Problema
-El usuario reporta que al ingresar el número telefónico en la pantalla de "Vincular con Teléfono" y pulsar "GENERAR CÓDIGO DE 8 DÍGITOS", aparece el error:
-`⚠️ window.require is not a function` (o error `t`).
+El usuario reporta que al hacer clic en "GENERAR CÓDIGO DE 8 DÍGITOS", aparece el mensaje *"El navegador de WhatsApp aún está iniciando sus servicios"*, solicitando mejorar la arquitectura de inicio para que el bot se conecte nativamente por código de teléfono.
 
-### Diagnóstico Técnico
-1. **Condición de Carrera en Carga:**
-   - La función `requestPairingCode` del backend sólo esperaba que `client.pupPage` estuviese instanciado. Sin embargo, Puppeteer crea la página de inmediato en `about:blank` mientras navega y carga los bundles JS de WhatsApp Web.
-   - Al ejecutar `evaluate` prematuramente en ese contexto, `window.require` y `window.AuthStore.PairingCodeLinkUtils` no están definidos aún en el objeto global del navegador, provocando `window.require is not a function`.
-2. **Error Interno CompanionHelloError (429 Rate-Overlimit):**
-   - Si el usuario o el sistema reintenta generar código varias veces consecutivas para el mismo número, WhatsApp Web rechaza la solicitud arrojando un error interno `CompanionHelloError` con código 429 (`IQErrorRateOverlimit` / `rate-overlimit`).
-   - Dado que esta clase de error nativa de WhatsApp tiene un `message: ""` vacío (código minificado `t`), Express devolvía un JSON de error críptico `{ "error": "t" }`.
+### Diagnóstico e Investigación
+1. **Incompatibilidad de Alternancia Dinámica:**
+   - WhatsApp Web inicializa internamente su protocolo de comunicación en modo QR (`initializeQRLinking`) si el cliente se arranca sin especificar previamente el número de teléfono.
+   - Intentar forzar `startAltLinkingFlow` en caliente sobre un navegador iniciado para QR provoca desincronización en los módulos `window.AuthStore` y errores como `window.require is not a function` o `CompanionHelloError`.
+2. **Confirmación de la API Nativa de `whatsapp-web.js`:**
+   - Se probó experimentalmente arrancar el cliente con la opción nativa `pairWithPhoneNumber: { phoneNumber: '...', showNotification: true }` en la instanciación de `new Client(...)`.
+   - Resultado: WhatsApp Web inicia limpiamente en modo Vinculación por Teléfono, sin errores de `window.require`, emitiendo instantáneamente el evento nativo `client.on('code', (code) => ...)` con el código de 8 dígitos (`DX9RKWKZ`).
 
 ### Solución Implementada
 1. **Backend (`server/whatsapp.js`):**
-   - Agregado polling de sincronización activa que espera explícitamente a que `window.AuthStore`, `window.AuthStore.PairingCodeLinkUtils` y `window.require` sean funciones operativas antes de solicitar el código.
-   - Desacople directo de la llamada nativa a `window.AuthStore.PairingCodeLinkUtils.startAltLinkingFlow(cleanNumber, true)`.
-   - Captura y traducción de `CompanionHelloError` / `IQErrorRateOverlimit` (código 429), emitiendo una explicación clara para el usuario:
-     *"WhatsApp limitó temporalmente las solicitudes para este número (límite de intentos alcanzado). Esperá unos 5-10 minutos antes de volver a solicitar un código para este teléfono, o vinculá con el Código QR."*
-2. **Frontend (`client/src/App.jsx`):**
-   - Enriquecido el banner de error: si se detecta un límite de intentos, se muestra automáticamente un botón de acción rápida *"Vincular ahora con Código QR"* que cambia a la pestaña de QR para no dejar bloqueado al operador.
-3. **Build & Verificación:**
-   - Recompilado el frontend con `npm run build` en `client/` sin errores de bundle.
+   - Modificada la función `startClient(pairingPhoneNumber)` para admitir un número de teléfono.
+   - Si se proporciona un número, instanciar `new Client({ ..., pairWithPhoneNumber: { phoneNumber: cleanNumber, showNotification: true, intervalMs: 180000 } })`.
+   - Captura nativa del evento `client.on('code', (code) => { ... })` y emisión en tiempo real por Socket.io.
+   - En `requestPairingCode(phoneNumber)`: se reinicia el cliente con la configuración nativa de teléfono y se aguarda la emisión del código. Si el cliente ya está conectado, retorna estado online.
+2. **Compilación y Git:**
+   - Verificada la compilación local del bundle Vite (`npm run build`).
+   - Cambios subidos a GitHub (`origin/main`).
