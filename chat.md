@@ -274,3 +274,28 @@ El cliente tiene problemas para conectar el bot mediante el código QR (WhatsApp
      - Botón de 1-tap para copiar el código al portapapeles.
      - Instrucciones claras paso a paso para introducir el código en la app de WhatsApp del celular (*Menú ⋮ / Configuración ⚙️ > Dispositivos vinculados > Vincular un dispositivo > "¿Vincular con el número de teléfono?"*).
    - Banner superior flotante actualizado para avisar de la disponibilidad de ambos métodos de vinculación.
+
+## Historial de Conversación - 2026-09-15 (Resolución de Error 'window.require is not a function')
+
+### Requerimiento / Problema
+El usuario reporta que al ingresar el número telefónico en la pantalla de "Vincular con Teléfono" y pulsar "GENERAR CÓDIGO DE 8 DÍGITOS", aparece el error:
+`⚠️ window.require is not a function` (o error `t`).
+
+### Diagnóstico Técnico
+1. **Condición de Carrera en Carga:**
+   - La función `requestPairingCode` del backend sólo esperaba que `client.pupPage` estuviese instanciado. Sin embargo, Puppeteer crea la página de inmediato en `about:blank` mientras navega y carga los bundles JS de WhatsApp Web.
+   - Al ejecutar `evaluate` prematuramente en ese contexto, `window.require` y `window.AuthStore.PairingCodeLinkUtils` no están definidos aún en el objeto global del navegador, provocando `window.require is not a function`.
+2. **Error Interno CompanionHelloError (429 Rate-Overlimit):**
+   - Si el usuario o el sistema reintenta generar código varias veces consecutivas para el mismo número, WhatsApp Web rechaza la solicitud arrojando un error interno `CompanionHelloError` con código 429 (`IQErrorRateOverlimit` / `rate-overlimit`).
+   - Dado que esta clase de error nativa de WhatsApp tiene un `message: ""` vacío (código minificado `t`), Express devolvía un JSON de error críptico `{ "error": "t" }`.
+
+### Solución Implementada
+1. **Backend (`server/whatsapp.js`):**
+   - Agregado polling de sincronización activa que espera explícitamente a que `window.AuthStore`, `window.AuthStore.PairingCodeLinkUtils` y `window.require` sean funciones operativas antes de solicitar el código.
+   - Desacople directo de la llamada nativa a `window.AuthStore.PairingCodeLinkUtils.startAltLinkingFlow(cleanNumber, true)`.
+   - Captura y traducción de `CompanionHelloError` / `IQErrorRateOverlimit` (código 429), emitiendo una explicación clara para el usuario:
+     *"WhatsApp limitó temporalmente las solicitudes para este número (límite de intentos alcanzado). Esperá unos 5-10 minutos antes de volver a solicitar un código para este teléfono, o vinculá con el Código QR."*
+2. **Frontend (`client/src/App.jsx`):**
+   - Enriquecido el banner de error: si se detecta un límite de intentos, se muestra automáticamente un botón de acción rápida *"Vincular ahora con Código QR"* que cambia a la pestaña de QR para no dejar bloqueado al operador.
+3. **Build & Verificación:**
+   - Recompilado el frontend con `npm run build` en `client/` sin errores de bundle.

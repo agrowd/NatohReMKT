@@ -90,7 +90,7 @@
   - Pestañas secundarias en el Constructor de Campañas para alternar limpiamente entre "Mensajes" y "Destinatarios" sin scroll interminable.
   - Adaptación de grillas a columnas flexibles (delays, buscador inteligente, tarjetas).
 - [x] Despliegue en VPS (commit `6e37fa8`), rebuild con `npm run build` y reinicio de `natoh-ui`. Verificada carga en vivo 200 OK.
-## Sesión: 2026-09-14 (Actual)
+## Sesión: 2026-09-14
 - [x] Implementación de Vinculación de WhatsApp por Número de Teléfono (Pairing Code) como alternativa al código QR:
   - Soporte en backend (`server/whatsapp.js`) para `requestPairingCode(phoneNumber)` y `cancelPairingCode()`.
   - Exposición de endpoints `POST /api/whatsapp/pair-phone` y `POST /api/whatsapp/cancel-pair-phone` en Express (`server/index.js`).
@@ -98,4 +98,18 @@
   - Integración en frontend React (`client/src/App.jsx` e `index.css`) con selector visual entre "📷 Código QR" y "📱 Vincular con Teléfono", visualizador de código de 8 dígitos de alto contraste, botón de copiado rápido e instrucciones paso a paso.
   - Sincronización en tiempo real vía Socket.io (`pairing_code`).
   - Rebuild local exitoso de Vite en `client`.
+
+## Sesión: 2026-09-15 (Actual)
+- [x] Diagnóstico exhaustivo del error `window.require is not a function` al presionar "GENERAR CÓDIGO DE 8 DÍGITOS" en producción.
+- [x] Detección de condiciones de carrera en el ciclo de vida del navegador Puppeteer:
+  - `requestPairingCode` avanzaba tan pronto existía `client.pupPage` (incluso en `about:blank`), cuando WhatsApp Web aún no había inyectado `window.require` ni `window.AuthStore.PairingCodeLinkUtils`.
+  - Detección del error interno de WhatsApp Web `CompanionHelloError` (código 429 `IQErrorRateOverlimit` / `rate-overlimit`) provocado al solicitar códigos reiteradamente para un mismo número.
+- [x] Refactorización de `server/whatsapp.js`:
+  - Implementado polling activo de inicialización que garantiza la disponibilidad de `window.AuthStore.PairingCodeLinkUtils` y `window.require`.
+  - Ejecución desacoplada de `startAltLinkingFlow` dentro de `pupPage.evaluate`.
+  - Captura y traducción amigable del error 429 de límite de intentos de WhatsApp con indicación de espera o alternativa por QR.
+- [x] Mejora en Frontend (`client/src/App.jsx`):
+  - Botón directo de acción "👉 Vincular ahora con Código QR" en caso de límite de tasa para desbloquear de inmediato la vinculación sin esperas.
+- [x] Rebuild exitoso de Vite en `client` (`npm run build`).
+
 

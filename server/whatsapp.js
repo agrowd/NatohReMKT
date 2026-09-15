@@ -501,19 +501,65 @@ const requestPairingCode = async (phoneNumber) => {
         startClient();
     }
 
-    // Esperar a que el navegador esté listo para vincular
+    // Esperar a que el navegador de WhatsApp Web esté completamente cargado y con los módulos listos
     const maxWaitMs = 30000;
     const startTime = Date.now();
-    while ((!client || !client.pupPage) && Date.now() - startTime < maxWaitMs) {
+    let isReady = false;
+
+    while (Date.now() - startTime < maxWaitMs) {
+        if (client && client.pupPage) {
+            try {
+                isReady = await client.pupPage.evaluate(() => {
+                    return typeof window.AuthStore !== 'undefined' && 
+                           typeof window.AuthStore.PairingCodeLinkUtils !== 'undefined' &&
+                           typeof window.require === 'function';
+                });
+                if (isReady) break;
+            } catch (e) {
+                // El navegador puede estar navegando o cargando recursos
+            }
+        }
         await new Promise(r => setTimeout(r, 500));
     }
 
-    if (!client || !client.pupPage) {
-        throw new Error('El navegador de WhatsApp está iniciando. Por favor espera 10 segundos y volvé a presionar "Generar Código".');
+    if (!client || !client.pupPage || !isReady) {
+        throw new Error('El navegador de WhatsApp aún está iniciando sus servicios. Por favor aguardá 10 segundos y volvé a presionar "Generar Código".');
     }
 
     try {
-        const code = await client.requestPairingCode(cleanNumber);
+        const result = await client.pupPage.evaluate(async (cleanPhone) => {
+            const utils = window.AuthStore?.PairingCodeLinkUtils;
+            if (!utils) {
+                return { ok: false, error: 'Módulo de vinculación no disponible. Aguarde unos segundos y reintente.' };
+            }
+            try {
+                utils.setPairingType('ALT_DEVICE_LINKING');
+                await utils.initializeAltDeviceLinking();
+                const code = await utils.startAltLinkingFlow(cleanPhone, true);
+                return { ok: true, code };
+            } catch (e) {
+                const isRateLimit = e.name === 'CompanionHelloError' || 
+                                    e.type?.name === 'IQErrorRateOverlimit' || 
+                                    e.type?.value?.code === 429 || 
+                                    e.type?.value?.text === 'rate-overlimit';
+                if (isRateLimit) {
+                    return { 
+                        ok: false, 
+                        rateLimit: true,
+                        error: 'WhatsApp limitó temporalmente las solicitudes para este número (límite de intentos alcanzado). Esperá unos 5-10 minutos antes de volver a solicitar un código para este teléfono, o vinculá con el Código QR.' 
+                    };
+                }
+                const msg = (e.message && e.message !== 't') ? e.message : (e.name || 'Error en WhatsApp Web al generar código.');
+                return { ok: false, error: msg };
+            }
+        }, cleanNumber);
+
+        if (!result.ok) {
+            console.error('[PAIRING ERROR]:', result.error);
+            throw new Error(result.error);
+        }
+
+        const code = result.code;
         lastPairingCode = code;
         console.log(`[PAIRING] Código generado exitosamente: ${code}`);
         if (io) {
@@ -521,7 +567,7 @@ const requestPairingCode = async (phoneNumber) => {
         }
         return { success: true, code, phoneNumber: cleanNumber };
     } catch (err) {
-        console.error('[PAIRING ERROR]:', err.message);
+        console.error('[PAIRING EXCEPTION]:', err.message);
         throw new Error(err.message || 'Error al comunicarse con WhatsApp Web para generar el código.');
     }
 };
@@ -530,7 +576,17 @@ const cancelPairingCode = async () => {
     lastPairingCode = null;
     if (client && client.pupPage) {
         try {
-            await client.cancelPairingCode();
+            await client.pupPage.evaluate(() => {
+                if (window.codeInterval) {
+                    clearInterval(window.codeInterval);
+                    window.codeInterval = undefined;
+                }
+                if (typeof window.AuthStore !== 'undefined' && window.AuthStore.PairingCodeLinkUtils) {
+                    try {
+                        window.AuthStore.PairingCodeLinkUtils.setPairingType('QR');
+                    } catch (e) {}
+                }
+            });
         } catch (e) {
             console.error('Error al cancelar código:', e.message);
         }

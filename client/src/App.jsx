@@ -447,8 +447,17 @@ function App() {
               </div>
 
               {pairingError && (
-                <div style={{ background: 'rgba(255,68,68,0.1)', color: '#ff6666', padding: '8px 12px', borderRadius: '8px', fontSize: '0.8rem', marginBottom: '1rem', border: '1px solid rgba(255,68,68,0.2)' }}>
-                  ⚠️ {pairingError}
+                <div style={{ background: 'rgba(255,68,68,0.1)', color: '#ff6666', padding: '10px 14px', borderRadius: '8px', fontSize: '0.82rem', marginBottom: '1rem', border: '1px solid rgba(255,68,68,0.2)', lineHeight: 1.4 }}>
+                  <div>⚠️ {pairingError}</div>
+                  {pairingError.includes('límite') && (
+                    <button 
+                      type="button" 
+                      onClick={() => setConnectTab('qr')}
+                      style={{ marginTop: '8px', background: 'rgba(255,255,255,0.08)', border: '1px solid var(--primary)', color: 'var(--primary)', borderRadius: '6px', padding: '4px 10px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                    >
+                      <Icon name="qr" size={14} /> Vincular ahora con Código QR
+                    </button>
+                  )}
                 </div>
               )}
 
