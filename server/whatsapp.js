@@ -594,6 +594,26 @@ const cancelPairingCode = async () => {
     return { success: true };
 };
 
+const debugPairingState = async () => {
+    if (!client) return { hasClient: false, status: currentStatus };
+    if (!client.pupPage) return { hasClient: true, hasPupPage: false, status: currentStatus };
+    try {
+        const evalInfo = await client.pupPage.evaluate(() => {
+            return {
+                url: window.location.href,
+                hasRequire: typeof window.require,
+                hasAuthStore: typeof window.AuthStore,
+                hasPairingUtils: typeof window.AuthStore?.PairingCodeLinkUtils,
+                hasDebug: typeof window.Debug,
+                authStoreKeys: window.AuthStore ? Object.keys(window.AuthStore) : null
+            };
+        });
+        return { hasClient: true, hasPupPage: true, status: currentStatus, evalInfo };
+    } catch (e) {
+        return { hasClient: true, hasPupPage: true, status: currentStatus, error: e.message };
+    }
+};
+
 module.exports = { 
     initWhatsApp, 
     startClient, 
@@ -613,7 +633,6 @@ module.exports = {
     syncLabelsAndMembers,
     requestPairingCode,
     cancelPairingCode,
+    debugPairingState,
     sanitizePairingNumber
 };
-
-

@@ -5,7 +5,7 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const db = require('./database');
-const { initWhatsApp, startClient, stopClient, logout, getLabels, getContactsByLabel, syncAllContacts, deepSyncLabels, tagContactsByQuery, sendMessage, getStatus, searchMessagesInHistory, cancelSearch, bulkTagChats, getActiveSearch, syncLabelsAndMembers, requestPairingCode, cancelPairingCode } = require('./whatsapp');
+const { initWhatsApp, startClient, stopClient, logout, getLabels, getContactsByLabel, syncAllContacts, deepSyncLabels, tagContactsByQuery, sendMessage, getStatus, searchMessagesInHistory, cancelSearch, bulkTagChats, getActiveSearch, syncLabelsAndMembers, requestPairingCode, cancelPairingCode, debugPairingState } = require('./whatsapp');
 
 
 
@@ -57,6 +57,14 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
 // --- Bot Control ---
 app.get('/api/whatsapp/status', (req, res) => {
     res.json({ ...getStatus(), activeCampaign, activeSearch: getActiveSearch() });
+});
+app.get('/api/whatsapp/debug-pairing', async (req, res) => {
+    try {
+        const info = await debugPairingState();
+        res.json(info);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 app.post('/api/whatsapp/start', async (req, res) => {
     try { await startClient(); res.json({ message: 'OK' }); } catch (err) { res.status(500).json({ error: err.message }); }
