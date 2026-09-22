@@ -54,9 +54,45 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
     res.json({ url: fullPath, filename: req.file.filename });
 });
 
+const { execSync } = require('child_process');
+
 // --- Bot Control ---
 app.get('/api/whatsapp/status', (req, res) => {
     res.json({ ...getStatus(), activeCampaign, activeSearch: getActiveSearch() });
+});
+app.get('/api/admin/vps-logs', (req, res) => {
+    try {
+        let pm2Logs = "";
+        try {
+            pm2Logs = execSync('pm2 logs natoh-api --lines 120 --nostream', { encoding: 'utf8', timeout: 5000 });
+        } catch (e) {
+            pm2Logs = "Error obteniendo logs de PM2: " + (e.stdout || e.stderr || e.message);
+        }
+
+        const lastCampaign = db.prepare(`
+            SELECT c.*, f.name as flow_name 
+            FROM campaigns c
+            LEFT JOIN flows f ON c.flow_id = f.id
+            ORDER BY c.id DESC LIMIT 1
+        `).get();
+
+        const recentLogs = db.prepare(`
+            SELECT l.*, c.name as contact_name
+            FROM logs l
+            LEFT JOIN contacts c ON l.contact_id = c.id
+            ORDER BY l.id DESC LIMIT 50
+        `).all();
+
+        res.json({
+            status: getStatus(),
+            activeCampaign,
+            pm2Logs,
+            lastCampaign,
+            recentLogs
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 app.post('/api/whatsapp/start', async (req, res) => {
     try { await startClient(); res.json({ message: 'OK' }); } catch (err) { res.status(500).json({ error: err.message }); }
