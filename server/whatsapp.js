@@ -281,7 +281,7 @@ const tagContactsByQuery = async (query, labelId, limit = 200) => {
 };
 
 const sendMessage = async (to, content, media = null) => {
-    if (!client) throw new Error('Bot apagado');
+    if (!client || currentStatus !== 'BOT ONLINE') throw new Error('Bot apagado o desconectado');
     let targetId = to;
     try {
         if (media) {

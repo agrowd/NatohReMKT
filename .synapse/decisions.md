@@ -1,15 +1,11 @@
+# Decisiones Técnicas del Proyecto (Chesterton Fences)
+
 | ID | Decisión Técnica | La Razón (The Why) | Estado |
 |:---|:---|:---|:---|
-| D-01 | **Stack Base: Vite + Express** | Necesitamos rapidez en el frontend y un backend robusto para manejar Puppeteer/whatsapp-web.js | 🟢 ACTIVE |
-| D-02 | **Socket.io para QR** | La sincronización del QR y el estado del envío debe ser en tiempo real para evitar refrescos innecesarios | 🟢 ACTIVE |
-| D-03 | **SQLite para Persistencia** | Ligero y fácil de deployar en VPS Debian sin overhead de bases de datos externas | 🟢 ACTIVE |
-| D-04 | **Sequential Flow Builder** | Para remarketing, una secuencia lineal es más intuitiva y fácil de gestionar que nodos complejos | 🟢 ACTIVE |
-| D-05 | **Soporte Multimedia** | Requerido por el usuario para enviar imágenes/videos en las campañas | 🟢 ACTIVE |
-| D-06 | **Native Text Variants** | Reemplazo de Spintax manual `{A|B}` por tarjetas de variantes visuales. El motor elige una al azar por contacto. | 🔒 LOCKED |
-| D-07 | **Gestión de Flows** | Permitir guardar, cargar y eliminar flujos para reutilizarlos en distintas campañas | 🟢 ACTIVE |
-| D-08 | **Deep Space v5.0 UI** | Interfaz premium centrada en la experiencia de usuario y claridad en la conexión del bot | 🟢 ACTIVE |
-| D-09 | **Smart Search & Mass Tagging (Escenario B)** | Procesamiento seguro de mensajes por lotes con delays de 70ms y streaming WebSocket en tiempo real para evitar bloqueos y optimizar remarketing. | 🔒 LOCKED |
-| D-10 | **Listas Virtuales locales y parseo VCF/CSV** | Permite segmentar bases de datos masivas (agenda completa) sin depender de etiquetas nativas ni chatear previamente. | 🔒 LOCKED |
-| D-11 | **Subdominio y Reverse Proxy Nginx** | Configuración de `remarketing.nextemarketing.com` con reverse proxy en Nginx (puerto 80/443 -> 8989 UI y 3001 API/Sockets/Uploads) para acceso unificado y seguro sin exponer puertos directos. | 🟢 ACTIVE |
-| D-12 | **Acceso Directo y UI Mobile-First con QRCode Nativo** | Eliminación de barrera de login para acceso directo; integración de `react-qr-code` SVG local con alto contraste para lectura instantánea y navegación inferior fija en celulares. | 🟢 ACTIVE |
-| D-13 | **Vinculación por Número de Teléfono (Pairing Code)** | Alternativa al escaneo QR para resolver fallas de WhatsApp en móviles ("no está disponible") mediante la API nativa de WhatsApp Web `requestPairingCode` generando un código de 8 caracteres con sanitización internacional. | 🔒 LOCKED |
+| D-01 | **Uso de `whatsapp-web.js#main` (rama dev de GitHub)** | La versión de npm estable lanzaba errores de `No LID for user` por cambios internos en la API de WhatsApp Web. | 🔒 LOCKED |
+| D-02 | **Gestión de Sesiones con `LocalAuth`** | Preserva la sesión de WhatsApp Web en el servidor sin requerir re-escaneo constante de QR/Código. | 🔒 LOCKED |
+| D-03 | **Wait con microintervalos (`delayWithCancelCheck`)** | Al pausar/detener campañas, los delays de 90s retenían la CPU. Los intervalos de 500ms permiten abortar en <1s. | 🔒 LOCKED |
+| D-04 | **Listas Virtuales en SQLite** | Evita las limitaciones nativas de etiquetas de WhatsApp (máximo de etiquetas y contactos sin chat previo). | 🔒 LOCKED |
+| D-05 | **Búsqueda en lotes con delay 70ms** | Evita saturar la CPU y previene bloqueos de rate limit por parte de WhatsApp durante lecturas de historial. | 🔒 LOCKED |
+| D-06 | **Filtrado de Exclusión por Período (`exclusionPeriod`)** | Permite configurar ventanas anti-spam (48h, 7d, siempre, ninguna) para evitar re-enviar mensajes a contactos recientes. | 🔒 LOCKED |
+| D-07 | **Sincronización interactiva por socket (`labels`, `status`)** | Notifica en tiempo real el progreso de envíos, sincronización y escaneo QR/Código en el dashboard web. | 🟢 ACTIVE |

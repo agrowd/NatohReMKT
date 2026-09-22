@@ -1,22 +1,23 @@
-# Environment Manager
+# Gestión de Entornos [L] Local vs [P] Producción
 
-## [L] Local Development
-- **Node:** v18+
-- **Frontend Port:** 5173
-- **Backend Port:** 3001
-- **DB:** `database.sqlite`
+## 💻 Entorno Local [L]
+- **SO:** Windows 11 / PowerShell
+- **Backend API:** `http://localhost:3001`
+- **Frontend UI:** `http://localhost:5173` (Vite Dev Server) o `http://localhost:8989`
+- **Comandos:**
+  - Backend: `cd server && npm run dev` / `node index.js`
+  - Frontend: `cd client && npm run dev`
+  - Build Frontend: `cd client && npm run build`
 
-## [P] Production (Debian VPS)
-- **Node:** v18+
-- **VPS IP:** `149.50.128.73` (SSH Port: `5782`)
-- **Process Manager:** PM2 (`natoh-api` en 3001, `natoh-ui` en 8989)
-- **Domain:** `remarketing.nextemarketing.com`
-- **Reverse Proxy:** Nginx (`/etc/nginx/sites-available/remarketing.nextemarketing.com`)
-  - `/` -> `http://127.0.0.1:8989` (Frontend Vite Build)
-  - `/api/` -> `http://127.0.0.1:3001` (Backend Express)
-  - `/socket.io/` -> `http://127.0.0.1:3001` (WebSocket upgrades)
-  - `/uploads/` -> `http://127.0.0.1:3001` (Multimedia)
-- **SSL:** Certbot Let's Encrypt ✅ ACTIVO con renovación automática (Expira: 2026-12-07)
+## 🚀 Entorno Producción [P] VPS
+- **IP:** `149.50.128.73`
+- **SSH:** `ssh -p 5782 root@149.50.128.73`
+- **Ruta del Proyecto:** `/srv/NatohReMKT`
 - **URL Pública:** `https://remarketing.nextemarketing.com`
-- **Dependencies:** `chromium`, `libatk-bridge2.0-0`, etc (for Puppeteer)
-
+- **Procesos PM2:**
+  - `natoh-api` (Port 3001)
+  - `natoh-ui` (Port 8989)
+- **Comando de Deploy:**
+  ```bash
+  cd /srv/NatohReMKT && git pull && cd client && npm run build && pm2 restart natoh-api natoh-ui
+  ```

@@ -848,6 +848,20 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
             }
         } catch (err) {
             db.prepare('INSERT INTO logs (campaign_id, contact_id, status, message) VALUES (?, ?, ?, ?)').run(campaignId, contact.id._serialized, 'error', err.message);
+            const statusInfo = getStatus();
+            if (
+                statusInfo.status !== 'BOT ONLINE' ||
+                err.message.includes('Bot apagado') ||
+                err.message.includes('desconectado') ||
+                err.message.includes('detached Frame') ||
+                err.message.includes('Execution context was destroyed') ||
+                err.message.includes('Session closed') ||
+                err.message.includes('Protocol error')
+            ) {
+                console.error(`[ENGINE] Error crítico de sesión/estado de WhatsApp ("${err.message}"). Abortando campaña ${campaignId}.`);
+                if (activeCampaign) activeCampaign.status = 'cancelled';
+                break;
+            }
         }
     }
     
