@@ -710,14 +710,20 @@ app.post('/api/campaigns', async (req, res) => {
 });
 
 app.post('/api/campaigns/stop', (req, res) => {
-    if (activeCampaign) {
-        const campaignId = activeCampaign.campaignId;
-        db.prepare("UPDATE campaigns SET status = 'cancelled' WHERE id = ?").run(campaignId);
-        activeCampaign.status = 'cancelled';
-        console.log(`[ENGINE] Deteniendo campaña ${campaignId} por solicitud del usuario.`);
-        res.json({ success: true, message: 'Campaña deteniéndose...' });
-    } else {
-        res.status(400).json({ error: 'No hay ninguna campaña activa en este momento.' });
+    try {
+        if (activeCampaign) {
+            const campaignId = activeCampaign.campaignId;
+            db.prepare("UPDATE campaigns SET status = 'cancelled' WHERE id = ?").run(campaignId);
+            activeCampaign.status = 'cancelled';
+            activeCampaign = null;
+        }
+        db.prepare("UPDATE campaigns SET status = 'cancelled' WHERE status = 'running'").run();
+
+        if (io) io.emit('campaign_finished', { status: 'cancelled' });
+        console.log('[ENGINE] Campaña detenida por solicitud del usuario.');
+        res.json({ success: true, message: 'Campaña detenida con éxito.' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 

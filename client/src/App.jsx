@@ -577,10 +577,8 @@ function App() {
                     if (confirm('¿Seguro que deseas detener la campaña activa? No se enviarán más mensajes.')) {
                       try {
                         await axios.post(`${API_URL}/api/campaigns/stop`);
-                        alert('Campaña detenida.');
-                      } catch (e) {
-                        alert('Error al detener la campaña.');
-                      }
+                      } catch (e) {}
+                      setActiveCampaign(null);
                     }
                   }}
                 >
