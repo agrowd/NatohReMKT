@@ -18,3 +18,10 @@
 **Solución:** Actualizar `whatsapp-web.js` a la última versión de `#main` en GitHub e implementar precarga y resolución con `client.getNumberId(to)` y `client.getChatById(targetId)` en `server/whatsapp.js` para forzar a WhatsApp Web a instanciar la estructura en `Store.Chat` antes de invocar `sendMessage`.
 **Commit:** `d0be601`
 **Estado:** ✅ FIXED
+
+## ERR-04: Error al detener campaña (2026-10-07)
+**Síntoma:** Al presionar el botón "DETENER" en la interfaz, aparecía un cartel emergente con "Error al detener la campaña".
+**Root Cause:** Si `activeCampaign` en memoria de Node ya se había vuelto `null` (porque el proceso de envío de mensajes había finalizado o sido interrumpido por un error de desconexión previo), el endpoint `POST /api/campaigns/stop` devolvía un código HTTP 400 (`No hay ninguna campaña activa`). El frontend Axios capturaba este status 400 como error no controlado.
+**Solución:** Hacer el endpoint `POST /api/campaigns/stop` totalmente idempotente para que devuelva status 200 OK actualizando cualquier campaña en estado 'running' en SQLite a 'cancelled', emitiendo el evento `campaign_finished` por WebSockets y limpiando el estado React en `App.jsx`.
+**Commit:** `424fff6`
+**Estado:** ✅ FIXED
