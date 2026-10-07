@@ -283,24 +283,47 @@ const tagContactsByQuery = async (query, labelId, limit = 200) => {
 const sendMessage = async (to, content, media = null) => {
     if (!client || currentStatus !== 'BOT ONLINE') throw new Error('Bot apagado o desconectado');
     let targetId = to;
-    try {
+
+    const executeSend = async (id) => {
         if (media) {
-            return await client.sendMessage(targetId, MessageMedia.fromFilePath(media), { caption: content });
+            return await client.sendMessage(id, MessageMedia.fromFilePath(media), { caption: content });
         }
-        return await client.sendMessage(targetId, content);
+        return await client.sendMessage(id, content);
+    };
+
+    try {
+        return await executeSend(targetId);
     } catch (err) {
-        if (err.message && err.message.includes('No LID')) {
+        const errMsg = err.message || '';
+        if (
+            errMsg.includes('No LID') ||
+            errMsg.includes('Data passed to getter') ||
+            errMsg.includes('memoize') ||
+            errMsg.includes('undefined')
+        ) {
             try {
                 const numberId = await client.getNumberId(to);
                 if (numberId && numberId._serialized) {
                     targetId = numberId._serialized;
-                    if (media) {
-                        return await client.sendMessage(targetId, MessageMedia.fromFilePath(media), { caption: content });
-                    }
-                    return await client.sendMessage(targetId, content);
                 }
-            } catch (retryErr) {}
-            throw new Error('El número no está registrado en WhatsApp o es inválido (No LID)');
+
+                try {
+                    const chat = await client.getChatById(targetId);
+                    if (chat) {
+                        if (media) {
+                            return await chat.sendMessage(MessageMedia.fromFilePath(media), { caption: content });
+                        }
+                        return await chat.sendMessage(content);
+                    }
+                } catch (chatErr) {}
+
+                return await executeSend(targetId);
+            } catch (retryErr) {
+                if (retryErr.message && retryErr.message.includes('No LID')) {
+                    throw new Error('El número no está registrado en WhatsApp o es inválido (No LID)');
+                }
+                throw retryErr;
+            }
         }
         throw err;
     }
