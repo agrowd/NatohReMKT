@@ -94,6 +94,19 @@ app.get('/api/admin/vps-logs', (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
+app.post('/api/admin/deploy-update', (req, res) => {
+    try {
+        const { exec } = require('child_process');
+        res.json({ success: true, message: 'Iniciando pull y reinicio en el servidor...' });
+        exec('git pull && cd server && npm install && pm2 restart natoh-api natoh-ui', { cwd: path.join(__dirname, '..') }, (error, stdout, stderr) => {
+            console.log('[DEPLOY-UPDATE STDOUT]', stdout);
+            if (error) console.error('[DEPLOY-UPDATE ERROR]', stderr);
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
 app.post('/api/whatsapp/start', async (req, res) => {
     try { await startClient(); res.json({ message: 'OK' }); } catch (err) { res.status(500).json({ error: err.message }); }
 });
