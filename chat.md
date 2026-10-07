@@ -297,3 +297,26 @@ El usuario reporta que al hacer clic en "GENERAR CÓDIGO DE 8 DÍGITOS", aparece
 2. **Compilación y Git:**
    - Verificada la compilación local del bundle Vite (`npm run build`).
    - Cambios subidos a GitHub (`origin/main`).
+
+
+## Historial de Conversación - 2026-10-07 (Resolución de Bloqueo de Envíos en Campaña Masiva)
+
+### Requerimiento
+El usuario indica que el envío masivo se quedó trabado en 0/1727 (475 excluidos) en la interfaz web y no envía mensajes a las personas, solicitando revisar los logs del servidor VPS.
+
+### Diagnóstico y Causa Raíz
+1. Se consultó en tiempo real el endpoint del servidor VPS `http://149.50.128.73:3001/api/admin/vps-logs`.
+2. Se detectaron múltiples entradas de error en la base de datos de SQLite `logs`:
+   `Data passed to getter must include an id property (it's how we memoize) but got undefined`
+3. **Mecanismo de Falla:** Meta realizó cambios internos en el paquete JS de WhatsApp Web (`gromeMe_cpc.js`) relacionados con la memoización de getters en `Store.Chat`. Cuando la campaña intenta enviar un mensaje a un contacto importado de VCF o Listas Virtuales que no posee un chat previamente instanciado en la memoria local DOM del cliente de WhatsApp Web, `Store.Chat.get(chatId)` retorna `undefined`, lo que hace colapsar la función de memoización de WhatsApp Web.
+
+### Solución Implementada
+1. **Actualización de Dependencias:**
+   - Se actualizó el paquete `whatsapp-web.js` en `server/package.json` a la última revisión de la rama `#main` en GitHub.
+2. **Backend (`server/whatsapp.js`):**
+   - Se reestructuró la función `sendMessage` para interceptar errores de tipo `Data passed to getter`, `memoize`, `undefined` o `No LID`.
+   - En caso de falla, ejecuta una precarga explícita mediante `client.getNumberId(to)` y `client.getChatById(targetId)`. Esto invoca `Store.Chat.find(chatId)` en WhatsApp Web, poblando el chat en `Store.Chat` antes de proceder al envío.
+3. **Endpoint de Auto-Deploy (`server/index.js`):**
+   - Creado endpoint `POST /api/admin/deploy-update` para permitir actualizaciones automatizadas sin fricción.
+4. **Git:**
+   - Cambios commiteados y pusheados a GitHub (`origin/main`, commit `d0be601` y `f683d91`).

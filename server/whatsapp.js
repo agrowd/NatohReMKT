@@ -10,9 +10,18 @@ let lastQr = null;
 let lastPairingCode = null;
 let isSyncing = false;
 
-const initWhatsApp = (socketIo) => {
+const initWhatsApp = async (socketIo) => {
     io = socketIo;
     console.log('--- WHATSAPP MODULE READY ---');
+    const sessionDir = path.join(__dirname, 'sessions');
+    if (fs.existsSync(sessionDir)) {
+        console.log('--- RESTAURANDO SESIÓN PREVIA AUTOMÁTICAMENTE ---');
+        try {
+            await startClient();
+        } catch (e) {
+            console.error('Error al auto-restaurar sesión:', e.message);
+        }
+    }
 };
 
 const getStatus = () => ({
@@ -41,8 +50,10 @@ const startClient = async (pairingPhoneNumber = null) => {
 
     console.log(`--- STARTING WHATSAPP CLIENT (Mode: ${pairingPhoneNumber ? 'Pairing Code (' + pairingPhoneNumber + ')' : 'QR Code'}) ---`);
 
+    const sessionDir = path.join(__dirname, 'sessions');
+
     const clientOptions = {
-        authStrategy: new LocalAuth({ dataPath: './sessions' }),
+        authStrategy: new LocalAuth({ dataPath: sessionDir }),
         puppeteer: {
             headless: true,
             args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
@@ -95,6 +106,18 @@ const startClient = async (pairingPhoneNumber = null) => {
             const labels = await client.getLabels();
             if (io) io.emit('labels', labels);
         } catch (e) {}
+    });
+
+    client.on('auth_failure', (msg) => {
+        console.error('--- AUTH FAILURE ---', msg);
+        currentStatus = 'DESCONECTADO';
+        lastQr = null;
+        lastPairingCode = null;
+        if (io) io.emit('status', currentStatus);
+        if (fs.existsSync(sessionDir)) {
+            try { fs.rmSync(sessionDir, { recursive: true, force: true }); } catch (e) {}
+        }
+        client = null;
     });
 
     client.on('disconnected', () => {

@@ -9,3 +9,4 @@
 | D-05 | **Búsqueda en lotes con delay 70ms** | Evita saturar la CPU y previene bloqueos de rate limit por parte de WhatsApp durante lecturas de historial. | 🔒 LOCKED |
 | D-06 | **Filtrado de Exclusión por Período (`exclusionPeriod`)** | Permite configurar ventanas anti-spam (48h, 7d, siempre, ninguna) para evitar re-enviar mensajes a contactos recientes. | 🔒 LOCKED |
 | D-07 | **Sincronización interactiva por socket (`labels`, `status`)** | Notifica en tiempo real el progreso de envíos, sincronización y escaneo QR/Código en el dashboard web. | 🟢 ACTIVE |
+| D-08 | **Auto-Restauración de Sesión y Ruta Absoluta de Almacenamiento (`path.join(__dirname, 'sessions')`)** | Garantiza la restauración automática e inmediata de la sesión al reiniciar PM2 o actualizar código, independientemente del directorio de ejecución CWD. | 🔒 LOCKED |
