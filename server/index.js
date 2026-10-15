@@ -99,7 +99,7 @@ app.post('/api/admin/deploy-update', (req, res) => {
     try {
         const { exec } = require('child_process');
         res.json({ success: true, message: 'Iniciando pull y reinicio en el servidor...' });
-        exec('git pull && cd server && npm install && pm2 restart natoh-api natoh-ui', { cwd: path.join(__dirname, '..') }, (error, stdout, stderr) => {
+        exec('git pull && cd server && npm install && cd ../client && npm run build && pm2 restart natoh-api natoh-ui', { cwd: path.join(__dirname, '..') }, (error, stdout, stderr) => {
             console.log('[DEPLOY-UPDATE STDOUT]', stdout);
             if (error) console.error('[DEPLOY-UPDATE ERROR]', stderr);
         });
