@@ -99,12 +99,39 @@ app.post('/api/admin/deploy-update', (req, res) => {
     try {
         const { exec } = require('child_process');
         res.json({ success: true, message: 'Iniciando pull y reinicio en el servidor...' });
-        exec('git pull && cd server && npm install && cd ../client && npm run build && pm2 restart natoh-api natoh-ui', { cwd: path.join(__dirname, '..') }, (error, stdout, stderr) => {
+        exec('git pull && cd server && npm install && cd ../client && npm install && npm run build && pm2 restart natoh-api natoh-ui', { cwd: path.join(__dirname, '..') }, (error, stdout, stderr) => {
             console.log('[DEPLOY-UPDATE STDOUT]', stdout);
             if (error) console.error('[DEPLOY-UPDATE ERROR]', stderr);
         });
     } catch (e) {
         res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/admin/build-ui', (req, res) => {
+    try {
+        const repoDir = path.join(__dirname, '..');
+        const gitPull = execSync('git pull', { cwd: repoDir, encoding: 'utf8', timeout: 30000 });
+        const clientDir = path.join(repoDir, 'client');
+        const buildOut = execSync('npm run build', { cwd: clientDir, encoding: 'utf8', timeout: 60000 });
+        let pm2Out = '';
+        try {
+            pm2Out = execSync('pm2 restart natoh-ui', { encoding: 'utf8', timeout: 15000 });
+        } catch(pErr) {
+            pm2Out = pErr.stdout || pErr.stderr || pErr.message;
+        }
+        res.json({
+            success: true,
+            gitPull,
+            buildOut,
+            pm2Out
+        });
+    } catch (err) {
+        res.status(500).json({
+            error: err.message,
+            stdout: err.stdout,
+            stderr: err.stderr
+        });
     }
 });
 
