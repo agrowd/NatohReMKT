@@ -92,6 +92,45 @@ db.prepare(`
     )
 `).run();
 
+// Migraciones de esquema seguras
+try { db.prepare('ALTER TABLE contacts ADD COLUMN last_sent_at DATETIME').run(); } catch(e) {}
+try { db.prepare('ALTER TABLE contacts ADD COLUMN sent_count INTEGER DEFAULT 0').run(); } catch(e) {}
+try { db.prepare('ALTER TABLE campaigns ADD COLUMN config TEXT').run(); } catch(e) {}
+
+// Tabla de Configuraciones Globales
+db.prepare(`
+    CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+`).run();
+
+// Configuración por defecto: 2 meses (60 días)
+db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('exclusionPeriod', '60d')`).run();
+
+// Índices para optimizar búsquedas masivas de exclusión anti-spam
+db.prepare(`CREATE INDEX IF NOT EXISTS idx_contacts_last_sent ON contacts(last_sent_at)`).run();
+db.prepare(`CREATE INDEX IF NOT EXISTS idx_logs_contact_sent ON logs(contact_id, status, created_at)`).run();
+db.prepare(`CREATE INDEX IF NOT EXISTS idx_logs_created_at ON logs(created_at)`).run();
+
+// Backfill automático de last_sent_at y sent_count desde logs históricos
+try {
+    const updateBackfill = db.prepare(`
+        UPDATE contacts 
+        SET last_sent_at = (SELECT MAX(created_at) FROM logs WHERE logs.contact_id = contacts.id AND logs.status = 'sent'),
+            sent_count = (SELECT COUNT(*) FROM logs WHERE logs.contact_id = contacts.id AND logs.status = 'sent')
+        WHERE EXISTS (SELECT 1 FROM logs WHERE logs.contact_id = contacts.id AND logs.status = 'sent')
+        AND last_sent_at IS NULL
+    `);
+    const res = updateBackfill.run();
+    if (res.changes > 0) {
+        console.log(`[DB] Backfilled last_sent_at para ${res.changes} contactos.`);
+    }
+} catch (e) {
+    console.error('[DB] Error backfilling last_sent_at:', e.message);
+}
+
 // Insertar usuarios iniciales si no existen
 const insertUser = db.prepare('INSERT OR IGNORE INTO users (username, password, role) VALUES (?, ?, ?)');
 insertUser.run('natoh', 'Federyco88!', 'admin');

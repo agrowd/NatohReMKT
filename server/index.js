@@ -107,6 +107,41 @@ app.post('/api/admin/deploy-update', (req, res) => {
         res.status(500).json({ error: e.message });
     }
 });
+
+// --- Settings ---
+app.get('/api/settings', (req, res) => {
+    try {
+        const rows = db.prepare('SELECT key, value FROM settings').all();
+        const settings = {};
+        for (const row of rows) {
+            settings[row.key] = row.value;
+        }
+        res.json(settings);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/settings', (req, res) => {
+    try {
+        const entries = Object.entries(req.body);
+        const upsert = db.prepare(`
+            INSERT INTO settings (key, value, updated_at) 
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+        `);
+        const transaction = db.transaction(() => {
+            for (const [key, value] of entries) {
+                upsert.run(key, typeof value === 'object' ? JSON.stringify(value) : String(value));
+            }
+        });
+        transaction();
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.post('/api/whatsapp/start', async (req, res) => {
     try { await startClient(); res.json({ message: 'OK' }); } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -495,7 +530,16 @@ app.post('/api/contacts/import-vcf', upload.single('file'), (req, res) => {
         // 2. Get set of already messaged contacts if shouldExcludeSent is true
         const sentContactIds = new Set();
         if (shouldExcludeSent) {
-            const sentLogs = db.prepare("SELECT DISTINCT contact_id FROM logs WHERE status = 'sent' AND created_at > datetime('now', '-7 days')").all();
+            let importExclusionPeriod = req.body.exclusionPeriod || '60d';
+            let timeFilter = "AND created_at > datetime('now', '-60 days')";
+            if (importExclusionPeriod === '48h') timeFilter = "AND created_at > datetime('now', '-48 hours')";
+            else if (importExclusionPeriod === '7d') timeFilter = "AND created_at > datetime('now', '-7 days')";
+            else if (importExclusionPeriod === '15d') timeFilter = "AND created_at > datetime('now', '-15 days')";
+            else if (importExclusionPeriod === '30d' || importExclusionPeriod === '1m') timeFilter = "AND created_at > datetime('now', '-30 days')";
+            else if (importExclusionPeriod === '60d' || importExclusionPeriod === '2m') timeFilter = "AND created_at > datetime('now', '-60 days')";
+            else if (importExclusionPeriod === 'ever') timeFilter = "";
+
+            const sentLogs = db.prepare(`SELECT DISTINCT contact_id FROM logs WHERE status = 'sent' ${timeFilter}`).all();
             sentLogs.forEach(l => sentContactIds.add(l.contact_id));
         }
         
@@ -653,41 +697,122 @@ app.get('/api/campaigns', (req, res) => {
     `).all());
 });
 
+// --- Helper: Resolución y Ordenamiento Inteligente de Contactos ---
+async function resolveContactsForCampaign(labelIds = [], virtualListIds = []) {
+    let allContacts = [];
+    
+    // 1. WhatsApp native labels
+    for (const labelId of labelIds) {
+        const contacts = await getContactsByLabel(labelId);
+        const contactsWithLabel = contacts.map(c => ({ ...c, sourceLabelId: labelId }));
+        allContacts = [...allContacts, ...contactsWithLabel];
+    }
+    
+    // 2. Local Virtual Lists
+    for (const listId of virtualListIds) {
+        const members = db.prepare(`
+            SELECT contacts.id, contacts.name, contacts.number, contacts.pushname, contacts.last_sent_at, contacts.sent_count 
+            FROM virtual_list_members 
+            JOIN contacts ON virtual_list_members.contact_id = contacts.id 
+            WHERE virtual_list_members.list_id = ?
+        `).all(listId);
+        
+        const contactsFromList = members.map(m => ({
+            id: { _serialized: m.id, user: m.number },
+            name: m.name,
+            number: m.number,
+            pushname: m.pushname,
+            last_sent_at: m.last_sent_at,
+            sent_count: m.sent_count,
+            sourceVirtualListId: listId
+        }));
+        
+        allContacts = [...allContacts, ...contactsFromList];
+    }
+    
+    const uniqueMap = new Map();
+    for (const c of allContacts) {
+        if (!uniqueMap.has(c.id._serialized)) {
+            uniqueMap.set(c.id._serialized, c);
+        }
+    }
+    const uniqueContacts = Array.from(uniqueMap.values());
+
+    // Completar last_sent_at para contactos provenientes de etiquetas si faltara
+    const missingInfo = uniqueContacts.filter(c => c.last_sent_at === undefined);
+    if (missingInfo.length > 0) {
+        const checkStmt = db.prepare('SELECT last_sent_at, sent_count FROM contacts WHERE id = ?');
+        for (const c of missingInfo) {
+            const row = checkStmt.get(c.id._serialized);
+            if (row) {
+                c.last_sent_at = row.last_sent_at;
+                c.sent_count = row.sent_count;
+            }
+        }
+    }
+
+    // Ordenamiento inteligente y equitativo:
+    // 1. Los contactos a los que NUNCA se les envió mensaje van primero (last_sent_at IS NULL).
+    // 2. Los contactos a los que se les envió hace más tiempo van después.
+    // Esto previene que se repitan siempre los mismos destinatarios en lotes parciales.
+    uniqueContacts.sort((a, b) => {
+        const aSent = a.last_sent_at ? new Date(a.last_sent_at).getTime() : 0;
+        const bSent = b.last_sent_at ? new Date(b.last_sent_at).getTime() : 0;
+        return aSent - bSent;
+    });
+
+    return uniqueContacts;
+}
+
+app.post('/api/campaigns/preview-audience', async (req, res) => {
+    const { labelIds = [], virtualListIds = [], exclusionPeriod = '60d' } = req.body;
+    try {
+        const uniqueContacts = await resolveContactsForCampaign(labelIds, virtualListIds);
+        const total = uniqueContacts.length;
+
+        if (total === 0 || exclusionPeriod === 'none') {
+            return res.json({ total, excluded: 0, eligible: total, exclusionPeriod });
+        }
+
+        let timeFilter = "AND created_at > datetime('now', '-60 days')";
+        if (exclusionPeriod === '48h') timeFilter = "AND created_at > datetime('now', '-48 hours')";
+        else if (exclusionPeriod === '7d') timeFilter = "AND created_at > datetime('now', '-7 days')";
+        else if (exclusionPeriod === '15d') timeFilter = "AND created_at > datetime('now', '-15 days')";
+        else if (exclusionPeriod === '30d' || exclusionPeriod === '1m') timeFilter = "AND created_at > datetime('now', '-30 days')";
+        else if (exclusionPeriod === '60d' || exclusionPeriod === '2m') timeFilter = "AND created_at > datetime('now', '-60 days')";
+        else if (exclusionPeriod === 'ever') timeFilter = "";
+
+        const checkRecentStmt = db.prepare(`
+            SELECT 1 FROM logs 
+            WHERE contact_id = ? 
+            AND status = 'sent' 
+            ${timeFilter} 
+            LIMIT 1
+        `);
+
+        let excluded = 0;
+        for (const contact of uniqueContacts) {
+            if (checkRecentStmt.get(contact.id._serialized)) {
+                excluded++;
+            }
+        }
+
+        res.json({
+            total,
+            excluded,
+            eligible: total - excluded,
+            exclusionPeriod
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.post('/api/campaigns', async (req, res) => {
     const { flowId, labelIds = [], virtualListIds = [], config } = req.body; 
     try {
         const flow = db.prepare('SELECT * FROM flows WHERE id = ?').get(flowId);
-        let allContacts = [];
-        
-        // 1. WhatsApp native labels
-        for (const labelId of labelIds) {
-            const contacts = await getContactsByLabel(labelId);
-            // Inyectamos el labelId original en cada contacto para saber de dónde sacarlo luego
-            const contactsWithLabel = contacts.map(c => ({ ...c, sourceLabelId: labelId }));
-            allContacts = [...allContacts, ...contactsWithLabel];
-        }
-        
-        // 2. Local Virtual Lists
-        for (const listId of virtualListIds) {
-            const members = db.prepare(`
-                SELECT contacts.id, contacts.name, contacts.number, contacts.pushname 
-                FROM virtual_list_members 
-                JOIN contacts ON virtual_list_members.contact_id = contacts.id 
-                WHERE virtual_list_members.list_id = ?
-            `).all(listId);
-            
-            const contactsFromList = members.map(m => ({
-                id: { _serialized: m.id, user: m.number },
-                name: m.name,
-                number: m.number,
-                pushname: m.pushname,
-                sourceVirtualListId: listId
-            }));
-            
-            allContacts = [...allContacts, ...contactsFromList];
-        }
-        
-        const uniqueContacts = Array.from(new Map(allContacts.map(c => [c.id._serialized, c])).values());
+        const uniqueContacts = await resolveContactsForCampaign(labelIds, virtualListIds);
         
         const labelNames = [];
         if (labelIds.length > 0) {
@@ -700,8 +825,8 @@ app.post('/api/campaigns', async (req, res) => {
         }
         
         const campaignLabel = labelNames.join(', ');
-        const campaign = db.prepare('INSERT INTO campaigns (flow_id, label, total_count) VALUES (?, ?, ?)')
-            .run(flowId, campaignLabel, uniqueContacts.length);
+        const campaign = db.prepare('INSERT INTO campaigns (flow_id, label, total_count, config) VALUES (?, ?, ?, ?)')
+            .run(flowId, campaignLabel, uniqueContacts.length, JSON.stringify(config || {}));
         const campaignId = campaign.lastInsertRowid;
         activeCampaign = { campaignId, flowName: flow.name, sentCount: 0, total: uniqueContacts.length, status: 'running' };
         startCampaignProcess(campaignId, uniqueContacts, JSON.parse(flow.steps), config);
@@ -755,9 +880,9 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
             break;
         }
         try {
-            // Regla de Exclusión Anti-Spam (por defecto últimos 7 días)
+            // Regla de Exclusión Anti-Spam (por defecto últimos 2 meses / 60 días)
             let shouldExclude = true;
-            let timeFilter = "AND created_at > datetime('now', '-7 days')";
+            let timeFilter = "AND created_at > datetime('now', '-60 days')";
             
             if (config && config.exclusionPeriod) {
                 if (config.exclusionPeriod === 'none') {
@@ -768,6 +893,15 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
                 } else if (config.exclusionPeriod === '7d') {
                     shouldExclude = true;
                     timeFilter = "AND created_at > datetime('now', '-7 days')";
+                } else if (config.exclusionPeriod === '15d') {
+                    shouldExclude = true;
+                    timeFilter = "AND created_at > datetime('now', '-15 days')";
+                } else if (config.exclusionPeriod === '30d' || config.exclusionPeriod === '1m') {
+                    shouldExclude = true;
+                    timeFilter = "AND created_at > datetime('now', '-30 days')";
+                } else if (config.exclusionPeriod === '60d' || config.exclusionPeriod === '2m') {
+                    shouldExclude = true;
+                    timeFilter = "AND created_at > datetime('now', '-60 days')";
                 } else if (config.exclusionPeriod === 'ever') {
                     shouldExclude = true;
                     timeFilter = "";
@@ -845,6 +979,9 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
             if(activeCampaign) activeCampaign.sentCount = sentCount;
             db.prepare('UPDATE campaigns SET sent_count = ? WHERE id = ?').run(sentCount, campaignId);
             db.prepare('INSERT INTO logs (campaign_id, contact_id, status) VALUES (?, ?, ?)').run(campaignId, contact.id._serialized, 'sent');
+            try {
+                db.prepare('UPDATE contacts SET last_sent_at = CURRENT_TIMESTAMP, sent_count = COALESCE(sent_count, 0) + 1 WHERE id = ?').run(contact.id._serialized);
+            } catch (e) {}
             
             // Lógica de Limpieza (Auto-Remove)
             if (config.autoRemove) {

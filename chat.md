@@ -320,3 +320,32 @@ El usuario indica que el envío masivo se quedó trabado en 0/1727 (475 excluido
    - Creado endpoint `POST /api/admin/deploy-update` para permitir actualizaciones automatizadas sin fricción.
 4. **Git:**
    - Cambios commiteados y pusheados a GitHub (`origin/main`, commit `d0be601` y `f683d91`).
+
+
+## Historial de Conversación - 2026-10-15 (Exclusión Anti-Spam de 2 Meses y Cola Inteligente de Destinatarios)
+
+### Requerimiento
+El usuario solicita agregar una opción para evitar enviar mensajes a personas que ya hayan recibido uno en los últimos 2 meses (60 días), que el sistema lo calcule dinámicamente si tienen envíos previos y que se guarde de forma permanente en la base de datos SQLite, dado que el cliente reporta que con frecuencia se le envía mensajes a los mismos contactos.
+
+### Diagnóstico de la Causa Raíz
+1. **Período de Exclusión Corto:** El sistema anteriormente utilizaba por defecto una ventana de 7 días. Tras 7 días, los primeros contactos de la lista volvían a ser elegibles.
+2. **Iteración Sin Ordenamiento Equitativo:** Las listas virtuales y etiquetas seleccionaban los contactos en su orden natural de inserción (`rowid`). Al enviar en lotes diarios (ej. 50 o 150 contactos) o reiniciar campañas, el bucle procesaba invariablemente a los primeros 50 o 150 contactos de la lista, dejando desatendidos a los contactos del fondo (1000+).
+3. **Falta de Cálculo Previsto:** La interfaz no mostraba el cálculo de cuántos contactos estaban excluidos vs disponibles antes de presionar enviar.
+
+### Solución Implementada
+1. **Esquema de Base de Datos SQLite (`server/database.js`):**
+   - Agregadas las columnas `last_sent_at DATETIME` y `sent_count INTEGER DEFAULT 0` a la tabla `contacts`.
+   - Creados índices `idx_contacts_last_sent`, `idx_logs_contact_sent` y `idx_logs_created_at` para acelerar el cálculo a O(1).
+   - Agregada columna `config TEXT` a la tabla `campaigns` para registrar los parámetros anti-spam usados en cada ejecución.
+   - Creada tabla `settings (key, value, updated_at)` con el valor inicial `exclusionPeriod = '60d'`.
+   - Implementado backfill automático que analiza la tabla histórica `logs` e inicializa `last_sent_at` y `sent_count` para todos los contactos que ya recibieron mensajes.
+2. **Motor de Campañas y Endpoints (`server/index.js`):**
+   - Incorporada la opción de exclusión `'60d'` / `'2m'` (`datetime('now', '-60 days')`) como valor por defecto y recomendado.
+   - Implementada función `resolveContactsForCampaign` con ordenamiento inteligente: `ORDER BY last_sent_at ASC NULLS FIRST`. Los contactos que nunca recibieron mensajes van primero, seguidos de los que los recibieron hace más tiempo.
+   - Creado endpoint `POST /api/campaigns/preview-audience` para calcular en tiempo real los contactos totales, excluidos y disponibles antes y durante el lanzamiento.
+   - Creados endpoints `GET /api/settings` y `POST /api/settings` para sincronizar la configuración con la base de datos.
+   - Al concretar cada envío exitoso, se actualiza en SQLite: `UPDATE contacts SET last_sent_at = CURRENT_TIMESTAMP, sent_count = sent_count + 1 WHERE id = ?`.
+3. **Frontend UI (`client/src/App.jsx`):**
+   - Agregada la opción "🌟 Evitar si se envió en los últimos 2 meses (60 días) [Recomendado]" en el selector anti-spam.
+   - Diseñada tarjeta interactiva "Audiencia Calculada" que informa en vivo: Total en lista, Excluidos por fecha y Listos para enviar.
+   - Sincronización bidireccional entre LocalStorage y el backend SQLite para que la preferencia quede guardada permanentemente.

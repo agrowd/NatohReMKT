@@ -138,12 +138,17 @@ function App() {
         maxLeadDelay: parsed.maxLeadDelay ?? 90,
         minStepDelay: parsed.minStepDelay ?? 5,
         maxStepDelay: parsed.maxStepDelay ?? 15,
-        exclusionPeriod: parsed.exclusionPeriod || '7d'
+        batchLimit: parsed.batchLimit,
+        autoRemove: parsed.autoRemove ?? false,
+        exclusionPeriod: parsed.exclusionPeriod || '60d'
       };
     } catch(e) { 
-      return { minLeadDelay: 30, maxLeadDelay: 90, minStepDelay: 5, maxStepDelay: 15, exclusionPeriod: '7d' }; 
+      return { minLeadDelay: 30, maxLeadDelay: 90, minStepDelay: 5, maxStepDelay: 15, exclusionPeriod: '60d' }; 
     }
   });
+
+  const [audienceStats, setAudienceStats] = useState(null);
+  const [isCalculatingAudience, setIsCalculatingAudience] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -151,6 +156,38 @@ function App() {
     localStorage.setItem('flowSteps', JSON.stringify(flowSteps));
     localStorage.setItem('antiSpamConfig', JSON.stringify(config));
   }, [selectedLabels, flowSteps, config, user]);
+
+  useEffect(() => {
+    if (!user) return;
+    axios.get(`${API_URL}/api/settings`).then(res => {
+      if (res.data && res.data.exclusionPeriod) {
+        setConfig(prev => ({ ...prev, exclusionPeriod: prev.exclusionPeriod || res.data.exclusionPeriod }));
+      }
+    }).catch(() => {});
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    if (selectedLabels.length === 0 && selectedVirtualLists.length === 0) {
+      setAudienceStats(null);
+      return;
+    }
+    let cancel = false;
+    setIsCalculatingAudience(true);
+    axios.post(`${API_URL}/api/campaigns/preview-audience`, {
+      labelIds: selectedLabels,
+      virtualListIds: selectedVirtualLists,
+      exclusionPeriod: config.exclusionPeriod || '60d'
+    }).then(res => {
+      if (!cancel) {
+        setAudienceStats(res.data);
+        setIsCalculatingAudience(false);
+      }
+    }).catch(() => {
+      if (!cancel) setIsCalculatingAudience(false);
+    });
+    return () => { cancel = true; };
+  }, [selectedLabels, selectedVirtualLists, config.exclusionPeriod, user]);
 
   useEffect(() => {
     if (!user) return;
@@ -778,6 +815,31 @@ function App() {
                     <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--primary)' }}>Cambiar ›</span>
                   </div>
 
+                  {/* Cálculo en Vivo de Audiencia y Exclusiones Anti-Spam */}
+                  {(selectedLabels.length > 0 || selectedVirtualLists.length > 0) && (
+                    <div className="glass-card" style={{ marginBottom: '1rem', background: 'rgba(0, 255, 136, 0.03)', border: '1px solid rgba(0, 255, 136, 0.2)', padding: '12px 16px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <Icon name="user" size={16} color="var(--primary)" />
+                          <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#fff' }}>Audiencia Calculada:</span>
+                        </div>
+                        {isCalculatingAudience ? (
+                          <span style={{ fontSize: '0.75rem', opacity: 0.7, color: 'var(--primary)' }}>Calculando filtros anti-spam en base de datos...</span>
+                        ) : audienceStats ? (
+                          <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap', fontSize: '0.8rem' }}>
+                            <span style={{ opacity: 0.8 }}>Total en lista: <b style={{ color: '#fff' }}>{audienceStats.total}</b></span>
+                            <span style={{ color: '#ffaa00' }}>
+                              🛡️ Excluidos ({audienceStats.exclusionPeriod === '60d' ? 'últimos 2 meses' : audienceStats.exclusionPeriod === '30d' ? 'último mes' : audienceStats.exclusionPeriod === '15d' ? 'últimos 15 días' : audienceStats.exclusionPeriod === '7d' ? 'últimos 7 días' : audienceStats.exclusionPeriod === '48h' ? 'últimas 48h' : audienceStats.exclusionPeriod === 'ever' ? 'histórico' : 'ninguno'}): <b>{audienceStats.excluded}</b>
+                            </span>
+                            <span style={{ color: 'var(--primary)', fontWeight: 700 }}>
+                              🚀 Listos para enviar: <b style={{ fontSize: '0.95rem' }}>{audienceStats.eligible}</b>
+                            </span>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="glass-card" style={{ marginBottom: '1.5rem' }}>
                     <div className="delays-grid">
                       <div className="styled-input-group">
@@ -812,15 +874,25 @@ function App() {
                           <label htmlFor="exclusion-period" style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--primary)' }}>Filtro de Exclusión Anti-Spam:</label>
                           <select 
                             id="exclusion-period"
-                            value={config.exclusionPeriod || '7d'}
-                            onChange={(e) => setConfig({...config, exclusionPeriod: e.target.value, excludeEver: e.target.value === 'ever'})}
+                            value={config.exclusionPeriod || '60d'}
+                            onChange={(e) => {
+                              const newPeriod = e.target.value;
+                              setConfig({...config, exclusionPeriod: newPeriod, excludeEver: newPeriod === 'ever'});
+                              axios.post(`${API_URL}/api/settings`, { exclusionPeriod: newPeriod }).catch(() => {});
+                            }}
                             style={{ background: 'var(--glass)', color: '#fff', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', padding: '6px 10px', fontSize: '0.8rem', cursor: 'pointer', outline: 'none' }}
                           >
-                            <option value="none">No excluir (Enviar siempre)</option>
-                            <option value="48h">Evitar si se envió en las últimas 48 horas</option>
+                            <option value="60d">🌟 Evitar si se envió en los últimos 2 meses (60 días) [Recomendado]</option>
+                            <option value="30d">Evitar si se envió en el último mes (30 días)</option>
+                            <option value="15d">Evitar si se envió en los últimos 15 días</option>
                             <option value="7d">Evitar si se envió en los últimos 7 días (1 semana)</option>
+                            <option value="48h">Evitar si se envió en las últimas 48 horas</option>
                             <option value="ever">Memoria Infinita (Evitar si se envió alguna vez)</option>
+                            <option value="none">No excluir (Enviar siempre)</option>
                           </select>
+                          <span style={{ fontSize: '0.62rem', opacity: 0.5, marginTop: '2px' }}>
+                            Prioriza contactos nunca antes contactados para no repetir siempre los mismos.
+                          </span>
                         </div>
                       </div>
                     </div>

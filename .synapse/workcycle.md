@@ -1,10 +1,20 @@
 # Workcycle Log - Sesión Actual
 
 ## 📋 Tarea Actual
-- **Objetivo:** Resolver el bloqueo del envío masivo de mensajes que muestra 0/1727 en la UI.
-- **Acciones Realizadas:**
-  1. Consulta directa a `/api/admin/vps-logs` en la IP `149.50.128.73:3001`.
-  2. Detección del error raíz: `Data passed to getter must include an id property (it's how we memoize) but got undefined`.
-  3. Diagnóstico: Cambio interno en WhatsApp Web (Octubre 2026) en la función de memoización de getters de chats/contactos en `Store.Chat` cuando un contacto de agenda (VCF/Lista Virtual) no tiene chat activo cargado en la memoria local de WhatsApp Web.
-  4. Actualización de `whatsapp-web.js` a la última revisión de la rama `#main` en GitHub.
-  5. Implementación de fallback con `client.getChatById` y `client.getNumberId` en `server/whatsapp.js` para forzar la carga previa del chat en `Store.Chat` antes de invocar `client.sendMessage()`.
+- **Objetivo:** Implementar la opción de exclusión anti-spam para no enviar mensajes a contactos a los que se les envió en los últimos 2 meses (60 días), cálculo en tiempo real de contactos disponibles/excluidos, persistencia en base de datos SQLite y ordenamiento inteligente para evitar repetir siempre los mismos destinatarios.
+- **Acciones en Curso:**
+  1. Actualización del esquema SQLite (`database.js`):
+     - Agregar columnas `last_sent_at` y `sent_count` en la tabla `contacts` con índices para búsquedas O(1).
+     - Backfill automático de `last_sent_at` y `sent_count` desde la tabla histórica `logs` (`status = 'sent'`).
+     - Agregar columna `config` en `campaigns`.
+     - Crear tabla `settings` para persistencia de configuraciones globales (`exclusionPeriod = '60d'`).
+  2. Motor de Campañas (`server/index.js`):
+     - Soporte para período de exclusión `'60d'` / `'2m'` (`datetime('now', '-60 days')`).
+     - Actualizar `contacts.last_sent_at` y `contacts.sent_count` cada vez que se envía un mensaje.
+     - Endpoint `POST /api/campaigns/preview-audience` para calcular en tiempo real los contactos totales, excluidos y disponibles antes y durante el lanzamiento.
+     - Ordenamiento inteligente de contactos por `last_sent_at ASC NULLS FIRST` para priorizar a los que nunca recibieron mensajes y evitar que siempre se envíe a los primeros de la lista.
+     - Endpoints `GET /api/settings` y `POST /api/settings` para guardar la configuración por defecto en la base de datos.
+  3. Frontend UI (`client/src/App.jsx`):
+     - Agregar opción "Evitar si se envió en los últimos 2 meses (60 días)" como predeterminada/recomendada.
+     - Mostrar tarjeta/badge informativo con el cálculo en vivo de la audiencia: Total contactos, Excluidos por fecha, Disponibles para enviar.
+     - Persistir la configuración seleccionada tanto en LocalStorage como en la base de datos SQLite.

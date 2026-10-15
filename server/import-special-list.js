@@ -148,9 +148,9 @@ function run() {
         console.log(`Creada nueva lista virtual "${listName}" (ID: ${listId})`);
     }
     
-    const sentLogs = db.prepare("SELECT DISTINCT contact_id FROM logs WHERE status = 'sent' AND created_at > datetime('now', '-7 days')").all();
+    const sentLogs = db.prepare("SELECT DISTINCT contact_id FROM logs WHERE status = 'sent' AND created_at > datetime('now', '-60 days')").all();
     const sentContactIds = new Set(sentLogs.map(l => l.contact_id));
-    console.log(`Se encontraron ${sentContactIds.size} contactos ya contactados en los últimos 7 días (excluidos).`);
+    console.log(`Se encontraron ${sentContactIds.size} contactos ya contactados en los últimos 2 meses (excluidos).`);
     
     const insertContact = db.prepare(`
         INSERT OR REPLACE INTO contacts (id, name, number, pushname) 
