@@ -52,11 +52,29 @@ const startClient = async (pairingPhoneNumber = null) => {
 
     const sessionDir = path.join(__dirname, 'sessions');
 
+    // Limpieza preventiva de SingletonLock huérfano de Chromium para evitar bloqueos tras reinicios de PM2
+    try {
+        const lockFile = path.join(sessionDir, 'session', 'SingletonLock');
+        if (fs.existsSync(lockFile)) {
+            fs.unlinkSync(lockFile);
+        }
+    } catch (e) {}
+
     const clientOptions = {
         authStrategy: new LocalAuth({ dataPath: sessionDir }),
         puppeteer: {
             headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--no-first-run',
+                '--no-zygote',
+                '--disable-gpu',
+                '--disable-features=IsolateOrigins,site-per-process',
+                '--disable-site-isolation-trials'
+            ]
         }
     };
 
@@ -303,9 +321,63 @@ const tagContactsByQuery = async (query, labelId, limit = 200) => {
     }
 };
 
+const normalizePhoneRecipient = (raw) => {
+    if (!raw) return raw;
+    let target = String(raw).trim();
+    let numOnly = target.includes('@') ? target.split('@')[0] : target;
+    let digits = numOnly.replace(/\D/g, '');
+    if (!digits) return target;
+
+    if (digits.startsWith('00')) digits = digits.substring(2);
+    while (digits.startsWith('0')) digits = digits.substring(1);
+
+    if (digits.startsWith('54')) {
+        let rest = digits.substring(2);
+        if (rest.startsWith('9')) rest = rest.substring(1);
+        if (rest.startsWith('15')) rest = rest.substring(2);
+        else if (rest.includes('15')) {
+            const idx = rest.indexOf('15');
+            if (idx >= 2 && idx <= 4) {
+                rest = rest.substring(0, idx) + rest.substring(idx + 2);
+            }
+        }
+        if (rest.length === 8) rest = '11' + rest;
+        return '549' + rest + '@c.us';
+    }
+
+    if (digits.startsWith('15')) {
+        let rest = digits.substring(2);
+        if (rest.length === 8) return '54911' + rest + '@c.us';
+        if (rest.length === 10 && rest.startsWith('11')) return '549' + rest + '@c.us';
+        if (rest.length === 10) return '549' + rest + '@c.us';
+        return '549' + rest + '@c.us';
+    }
+
+    if (digits.includes('15')) {
+        const idx = digits.indexOf('15');
+        if (idx >= 2 && idx <= 4) {
+            const without15 = digits.substring(0, idx) + digits.substring(idx + 2);
+            if (without15.length === 10) {
+                return '549' + without15 + '@c.us';
+            }
+        }
+    }
+
+    if (digits.length === 10) {
+        return '549' + digits + '@c.us';
+    }
+    if (digits.length === 8) {
+        return '54911' + digits + '@c.us';
+    }
+    if (digits.length >= 11) {
+        return digits + '@c.us';
+    }
+    return target;
+};
+
 const sendMessage = async (to, content, media = null) => {
     if (!client || currentStatus !== 'BOT ONLINE') throw new Error('Bot apagado o desconectado');
-    let targetId = to;
+    let targetId = normalizePhoneRecipient(to);
 
     const executeSend = async (id) => {
         if (media) {
@@ -317,15 +389,32 @@ const sendMessage = async (to, content, media = null) => {
     try {
         return await executeSend(targetId);
     } catch (err) {
-        const errMsg = err.message || '';
+        let errMsg = err.message || '';
+        
+        // Si falló por frame desprendido o contexto destruido en Puppeteer, intentar una re-ejecución tras 1.5s
+        if (errMsg.includes('detached Frame') || errMsg.includes('Execution context was destroyed')) {
+            console.warn(`[WHATSAPP] Advertencia de frame al enviar a ${targetId} (${errMsg}). Reintentando en 1500ms...`);
+            await new Promise(r => setTimeout(r, 1500));
+            if (client && currentStatus === 'BOT ONLINE') {
+                try {
+                    return await executeSend(targetId);
+                } catch (retryFrameErr) {
+                    errMsg = retryFrameErr.message || errMsg;
+                }
+            }
+        }
+
+        // Intento de resolución profunda con getNumberId y getChatById
         if (
             errMsg.includes('No LID') ||
             errMsg.includes('Data passed to getter') ||
             errMsg.includes('memoize') ||
-            errMsg.includes('undefined')
+            errMsg.includes('undefined') ||
+            errMsg.includes('detached Frame')
         ) {
             try {
-                const numberId = await client.getNumberId(to);
+                const rawNumber = targetId.includes('@') ? targetId.split('@')[0] : targetId;
+                const numberId = await client.getNumberId(rawNumber);
                 if (numberId && numberId._serialized) {
                     targetId = numberId._serialized;
                 }

@@ -232,10 +232,14 @@ function App() {
     });
     socket.on('labels', (data) => setLabels(data || []));
     socket.on('campaign_progress', (data) => setActiveCampaign(data));
-    socket.on('campaign_finished', () => { 
+    socket.on('campaign_finished', (data) => { 
       setActiveCampaign(null); 
       fetchCampaigns(); 
-      alert('✅ ¡Campaña Finalizada! Todos los mensajes han sido enviados o procesados exitosamente.');
+      if (data && data.status === 'cancelled') {
+        alert('⚠️ La campaña fue detenida o interrumpida.');
+      } else {
+        alert('🚀 ¡Campaña Finalizada! Todos los mensajes han sido enviados o procesados exitosamente.');
+      }
     });
     
     socket.on('tag_progress', (data) => {

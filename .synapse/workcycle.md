@@ -1,24 +1,26 @@
 # Workcycle Log - Sesión Actual
 
 ## 📋 Tarea Completada
-- **Objetivo:** Implementar la opción de exclusión anti-spam para no enviar mensajes a contactos a los que se les envió en los últimos 2 meses (60 días), cálculo en tiempo real de contactos disponibles/excluidos, persistencia en base de datos SQLite y ordenamiento inteligente para evitar repetir siempre los mismos destinatarios.
+- **Objetivo:** Resolver el problema donde al iniciar la campaña con la lista virtual "Luz o Hifu" se cancelaba inmediatamente en 1 segundo mostrando un cartel de finalización falsa sin enviar mensajes, protegiendo rigurosamente la sesión de WhatsApp activa.
 - **Acciones Realizadas:**
-  1. Actualización del esquema SQLite (`database.js`):
-     - Agregadas columnas `last_sent_at` y `sent_count` en la tabla `contacts` con índices para búsquedas O(1).
-     - Backfill automático de `last_sent_at` y `sent_count` desde la tabla histórica `logs` (`status = 'sent'`).
-     - Agregada columna `config` en `campaigns`.
-     - Creada tabla `settings` para persistencia de configuraciones globales (`exclusionPeriod = '60d'`).
-  2. Motor de Campañas (`server/index.js`):
-     - Soporte para período de exclusión `'60d'` / `'2m'` (`datetime('now', '-60 days')`).
-     - Actualiza `contacts.last_sent_at` y `contacts.sent_count` cada vez que se envía un mensaje.
-     - Endpoint `POST /api/campaigns/preview-audience` para calcular en tiempo real los contactos totales, excluidos y disponibles antes y durante el lanzamiento.
-     - Ordenamiento inteligente de contactos por `last_sent_at ASC NULLS FIRST` para priorizar a los que nunca recibieron mensajes y evitar que siempre se envíe a los primeros de la lista.
-     - Endpoints `GET /api/settings` y `POST /api/settings` para guardar la configuración por defecto en la base de datos.
-  3. Frontend UI (`client/src/App.jsx`):
-     - Agregada opción "🌟 Evitar si se envió en los últimos 2 meses (60 días) [Recomendado]" como predeterminada/recomendada.
-     - Tarjeta interactiva "Audiencia Calculada" que informa en vivo: Total en lista, Excluidos por fecha y Listos para enviar.
-     - Persistencia sincronizada entre LocalStorage y la base de datos SQLite.
-  4. Despliegue en Producción (VPS):
-     - Compilación y build de frontend React/Vite.
-     - Actualizado en VPS con PM2 reiniciado (`natoh-api`, `natoh-ui`).
-     - Verificado en producción: Bot en estado `BOT ONLINE`, cálculo de audiencia verificado (1727 total, 782 excluidos por 2 meses, 945 listos para enviar).
+  1. Diagnóstico de Logs en VPS (`/api/admin/vps-logs`):
+     - Identificado que las campañas 90 y 91 fallaron en el primer contacto `15409177996@c.us` ("Claudiahifufacialjueves") debido a que Puppeteer arrojó `Attempted to use detached Frame`.
+     - `server/index.js` contenía `err.message.includes('detached Frame')` dentro de la condición de aborto de campaña, provocando que un error en un único contacto cancelara toda la campaña (0/742).
+     - El frontend `client/src/App.jsx` mostraba el alert de éxito absoluto al recibir `campaign_finished` sin validar `status === 'cancelled'`.
+  2. Blindaje del Motor de WhatsApp (`server/whatsapp.js`):
+     - Agregados flags de estabilidad a Puppeteer: `--disable-features=IsolateOrigins,site-per-process`, `--disable-site-isolation-trials`, `--disable-gpu`, `--disable-accelerated-2d-canvas`.
+     - Implementada limpieza preventiva de `SingletonLock` de Chromium para evitar bloqueos tras reinicios.
+     - Implementada normalización profunda de números telefónicos argentinos (`15...` -> `549...`) antes del envío.
+     - En `sendMessage`, manejo con retry ante advertencias de detached frame y resolución alternativa de JID con `client.getNumberId()` y precarga con `client.getChatById()`.
+  3. Desacoplamiento de Fallos por Lead (`server/index.js`):
+     - Un fallo en un lead individual ya no cancela la campaña mientras el bot esté `BOT ONLINE`.
+     - Se registra el error en `logs` (`status = 'error'`), se actualiza `contacts.last_sent_at` para rotar la cola y evitar que un contacto roto quede eternamente como #1 bloqueando la lista, se pausa 2s por resguardo y se continúa con el resto de la lista.
+     - Función `normalizePhoneNumber` mejorada para Argentina.
+     - Normalización de IDs al resolver contactos de listas virtuales.
+  4. Migración de Base de Datos (`server/database.js`):
+     - Migración automática al iniciar para normalizar contactos preexistentes en SQLite con prefijo `15...` a formato internacional `549...`.
+  5. Interfaz de Usuario (`client/src/App.jsx`):
+     - `socket.on('campaign_finished')` ahora distingue entre campañas completadas y canceladas/interrumpidas para no engañar al usuario.
+  6. Compilación y Despliegue:
+     - Rebuild de Vite (`npm run build` en cliente) exitoso.
+     - Validación sintáctica de Node sin errores.

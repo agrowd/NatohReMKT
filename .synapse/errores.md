@@ -25,3 +25,17 @@
 **Solución:** Hacer el endpoint `POST /api/campaigns/stop` totalmente idempotente para que devuelva status 200 OK actualizando cualquier campaña en estado 'running' en SQLite a 'cancelled', emitiendo el evento `campaign_finished` por WebSockets y limpiando el estado React en `App.jsx`.
 **Commit:** `424fff6`
 **Estado:** ✅ FIXED
+
+## ERR-05: Finalización inmediata en 1s con alerta falsa y cancelación por Detached Frame (2026-10-24)
+**Síntoma:** Al seleccionar la lista virtual "Luz o Hifu" (742 contactos elegibles) y presionar enviar, a los pocos segundos la UI mostraba un cartel indicando "Campaña Finalizada! Todos los mensajes enviados", pero ningún mensaje salía hacia WhatsApp (0/742).
+**Root Cause:**
+1. Al ordenar por `last_sent_at ASC NULLS FIRST`, el contacto #1 en la cola era un contacto histórico con formato local inválido (`15409177996@c.us`).
+2. Al intentar evaluar el chat de ese número, Puppeteer arrojaba `Attempted to use detached Frame`.
+3. El bucle de `server/index.js` contenía `err.message.includes('detached Frame')` dentro de la condición de aborto crítico, provocando que un fallo en un único lead cancelara toda la campaña y rompiera el ciclo (`break`).
+4. El backend emitía `campaign_finished` con `status: 'cancelled'`, pero el frontend escuchaba `campaign_finished` sin verificar `status`, mostrando el alert de éxito absoluto a pesar de haber enviado 0 mensajes.
+**Solución:**
+1. Desacoplamiento de fallos por contacto: En `startCampaignProcess`, si ocurre un error individual en un destinatario pero el bot sigue `BOT ONLINE`, se guarda el error en `logs`, se actualiza `last_sent_at` para que no bloquee futuros envíos al frente de la cola, y se continúa con el siguiente contacto.
+2. Argumentos de Puppeteer anti-aislamiento de marcos (`--disable-features=IsolateOrigins,site-per-process`, `--disable-site-isolation-trials`, `--disable-gpu`) y limpieza de `SingletonLock`.
+3. Normalizador automático de números telefónicos locales argentinos (`15...` -> `549...`) en backend, importación, resolución de campañas y migración de base de datos SQLite.
+4. Distinción visual en el frontend entre campañas completadas y canceladas/interrumpidas.
+**Estado:** ✅ FIXED

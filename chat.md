@@ -349,3 +349,38 @@ El usuario solicita agregar una opción para evitar enviar mensajes a personas q
    - Agregada la opción "🌟 Evitar si se envió en los últimos 2 meses (60 días) [Recomendado]" en el selector anti-spam.
    - Diseñada tarjeta interactiva "Audiencia Calculada" que informa en vivo: Total en lista, Excluidos por fecha y Listos para enviar.
    - Sincronización bidireccional entre LocalStorage y el backend SQLite para que la preferencia quede guardada permanentemente.
+
+## Historial de Conversación - 2026-10-24 (Resolución de Finalización Inmediata en 1s y Cancelación por Detached Frame)
+
+### Requerimiento
+El usuario reporta: "Selecciono la lista virtual de luz o hifu, me da como resultado que esta para enviarle a x cantidad de personas, pongo enviar y en un segundo me dice que ya se envio, que puede ser? trata de proteger la sesion".
+
+### Diagnóstico de la Causa Raíz
+1. **Logs en Producción (`/api/admin/vps-logs`):**
+   - Se revisaron las campañas 90 y 91 creadas hoy para la lista virtual "Luz o Hifu" (742 contactos elegibles).
+   - En ambas campañas, en el primer contacto `15409177996@c.us` ("Claudiahifufacialjueves"), Puppeteer arrojó el error:
+     `Attempted to use detached Frame 'D815534E1F0A891536AF0D6DF1AA274D'`.
+2. **Aborto Prematuro del Bucle en el Motor (`server/index.js`):**
+   - En `startCampaignProcess`, el bloque catch contenía `err.message.includes('detached Frame')` dentro de la condición de aborto fatal. Por lo tanto, el fallo en ese único lead provocaba que `activeCampaign.status = 'cancelled'` y se ejecutara un `break` inmediato, cancelando la campaña con 0 mensajes enviados.
+3. **Falsa Alarma en el Frontend (`client/src/App.jsx`):**
+   - Al cancelarse la campaña, el backend emitía `campaign_finished` con `{ status: 'cancelled' }`.
+   - El socket listener en `App.jsx` ejecutaba incondicionalmente: `alert('🚀 ¡Campaña Finalizada! Todos los mensajes han sido enviados o procesados exitosamente.')`, dando la falsa impresión de que se había completado en 1 segundo.
+4. **Contacto #1 Inválido en la Cola:**
+   - Debido al ordenamiento inteligente `last_sent_at ASC NULLS FIRST`, el contacto Claudia (con formato local `15409177996@c.us` y `last_sent_at` nulo) quedaba invariablemente en la posición #1 de la cola en cada intento.
+5. **Configuración de Puppeteer en VPS Headless:**
+   - Chromium carecía de los flags `--disable-features=IsolateOrigins,site-per-process`, `--disable-site-isolation-trials` y `--disable-gpu`, lo que facilitaba que subframes o iframes en WhatsApp Web se desprendieran durante llamadas de evaluación.
+
+### Solución Implementada
+1. **Desacoplamiento de Fallos por Lead (`server/index.js`):**
+   - Modificado el bloque `catch` para que los errores en contactos individuales (números rotos, detached frame o timeouts) NO cancelen la campaña mientras el bot continúe en `BOT ONLINE`.
+   - El error se registra en `logs` con estado `'error'`, se actualiza `contacts.last_sent_at = CURRENT_TIMESTAMP` para que ese número pase al final de la cola y no obstruya a los demás contactos, se pausa 2s por resguardo y se continúa con el siguiente lead.
+   - Sólo si el bot pasa a estar desconectado o el usuario pulsa "Detener" se interrumpe la campaña.
+2. **Estabilidad y Blindaje de WhatsApp Web (`server/whatsapp.js`):**
+   - Incorporados flags de Chromium anti-desprendimiento de marcos: `--disable-features=IsolateOrigins,site-per-process`, `--disable-site-isolation-trials`, `--disable-gpu`, `--disable-accelerated-2d-canvas`.
+   - Limpieza preventiva de `SingletonLock` de Chromium al iniciar para prevenir errores de "The browser is already running" tras reinicios de PM2.
+   - En `sendMessage`, reintento automático tras 1500ms si ocurre una advertencia de frame, seguido de resolución profunda de ID con `client.getNumberId()` y precarga con `client.getChatById()`.
+3. **Normalización de Teléfonos Argentinos (`database.js`, `index.js`, `whatsapp.js`):**
+   - Normalizador unificado que transforma formatos locales como `1540917796` o `15...` a formato internacional oficial `549...`.
+   - Migración automática en SQLite al arrancar el servidor para actualizar contactos preexistentes guardados con `15%@c.us`.
+4. **Notificaciones Claras en el Frontend (`client/src/App.jsx`):**
+   - `campaign_finished` ahora evalúa `data.status`: informa si la campaña fue detenida/interrumpida o si finalizó exitosamente.

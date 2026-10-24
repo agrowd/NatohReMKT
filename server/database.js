@@ -131,6 +131,41 @@ try {
     console.error('[DB] Error backfilling last_sent_at:', e.message);
 }
 
+// Normalización automática de números con prefijo local argentino '15' guardados históricamente
+try {
+    const broken15Contacts = db.prepare("SELECT id, name, number, pushname FROM contacts WHERE id LIKE '15%@c.us'").all();
+    if (broken15Contacts.length > 0) {
+        console.log(`[DB] Normalizando ${broken15Contacts.length} contactos con formato local '15...' a formato internacional...`);
+        for (const c of broken15Contacts) {
+            const rawDigits = c.id.split('@')[0].replace(/\D/g, '');
+            const rest = rawDigits.substring(2);
+            let normalizedNumber = rest;
+            if (rest.length === 8) normalizedNumber = '54911' + rest;
+            else if (rest.length === 10 && rest.startsWith('11')) normalizedNumber = '549' + rest;
+            else if (rest.length === 10) normalizedNumber = '549' + rest;
+            else normalizedNumber = '549' + rest;
+            
+            const normalizedId = normalizedNumber + '@c.us';
+            
+            db.prepare(`
+                INSERT INTO contacts (id, name, number, pushname, last_sent_at, sent_count)
+                SELECT ?, name, ?, pushname, last_sent_at, sent_count FROM contacts WHERE id = ?
+                ON CONFLICT(id) DO UPDATE SET 
+                    last_sent_at = COALESCE(contacts.last_sent_at, excluded.last_sent_at),
+                    sent_count = COALESCE(contacts.sent_count, 0) + COALESCE(excluded.sent_count, 0)
+            `).run(normalizedId, normalizedNumber, c.id);
+
+            db.prepare("UPDATE OR IGNORE virtual_list_members SET contact_id = ? WHERE contact_id = ?").run(normalizedId, c.id);
+            db.prepare("UPDATE OR IGNORE label_members SET contact_id = ? WHERE contact_id = ?").run(normalizedId, c.id);
+            db.prepare("UPDATE OR IGNORE logs SET contact_id = ? WHERE contact_id = ?").run(normalizedId, c.id);
+            db.prepare("DELETE FROM contacts WHERE id = ?").run(c.id);
+        }
+        console.log(`[DB] Finalizada normalización de contactos con prefijo '15'.`);
+    }
+} catch (e) {
+    console.error('[DB] Error normalizando contactos con prefijo 15:', e.message);
+}
+
 // Insertar usuarios iniciales si no existen
 const insertUser = db.prepare('INSERT OR IGNORE INTO users (username, password, role) VALUES (?, ?, ?)');
 insertUser.run('natoh', 'Federyco88!', 'admin');

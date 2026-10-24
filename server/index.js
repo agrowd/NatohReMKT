@@ -262,45 +262,53 @@ function decodeQuotedPrintable(str) {
 
 function normalizePhoneNumber(num) {
     if (!num) return null;
-    let cleaned = num.replace(/\D/g, '');
-    if (cleaned.startsWith('00')) {
-        cleaned = cleaned.substring(2);
-    }
-    
+    let cleaned = String(num).replace(/\D/g, '');
+    if (!cleaned) return null;
+
+    if (cleaned.startsWith('00')) cleaned = cleaned.substring(2);
+    while (cleaned.startsWith('0')) cleaned = cleaned.substring(1);
+
     if (cleaned.startsWith('54')) {
-        if (cleaned.startsWith('54915')) {
-            cleaned = '549' + cleaned.substring(5);
-        } else if (cleaned.startsWith('5415')) {
-            cleaned = '549' + cleaned.substring(4);
-        } else if (!cleaned.startsWith('549')) {
-            if (cleaned.length === 12) {
-                cleaned = '549' + cleaned.substring(2);
+        let rest = cleaned.substring(2);
+        if (rest.startsWith('9')) rest = rest.substring(1);
+        if (rest.startsWith('15')) rest = rest.substring(2);
+        else if (rest.includes('15')) {
+            const idx = rest.indexOf('15');
+            if (idx >= 2 && idx <= 4) {
+                rest = rest.substring(0, idx) + rest.substring(idx + 2);
             }
         }
-    } else {
-        if (cleaned.startsWith('0')) {
-            cleaned = cleaned.substring(1);
-        }
-        
-        if (cleaned.startsWith('15') && cleaned.length === 9) {
-            cleaned = cleaned.substring(2);
-        } else if (cleaned.length === 10) {
-            cleaned = '549' + cleaned;
-        } else if (cleaned.includes('15')) {
-            const idx = cleaned.indexOf('15');
-            if (idx > 0 && idx < 5 && cleaned.length >= 11) {
-                cleaned = cleaned.substring(0, idx) + cleaned.substring(idx + 2);
+        if (rest.length === 8) rest = '11' + rest;
+        return '549' + rest + '@c.us';
+    }
+
+    if (cleaned.startsWith('15')) {
+        let rest = cleaned.substring(2);
+        if (rest.length === 8) return '54911' + rest + '@c.us';
+        if (rest.length === 10 && rest.startsWith('11')) return '549' + rest + '@c.us';
+        if (rest.length === 10) return '549' + rest + '@c.us';
+        return '549' + rest + '@c.us';
+    }
+
+    if (cleaned.includes('15')) {
+        const idx = cleaned.indexOf('15');
+        if (idx >= 2 && idx <= 4) {
+            const without15 = cleaned.substring(0, idx) + cleaned.substring(idx + 2);
+            if (without15.length === 10) {
+                return '549' + without15 + '@c.us';
             }
-        }
-        
-        if (cleaned.length === 10) {
-            cleaned = '549' + cleaned;
-        } else if (cleaned.length === 11 && cleaned.startsWith('9')) {
-            cleaned = '54' + cleaned;
         }
     }
-    
-    if (cleaned && (cleaned.startsWith('549') || cleaned.length >= 10)) {
+
+    if (cleaned.length === 10) {
+        return '549' + cleaned + '@c.us';
+    } else if (cleaned.length === 8) {
+        return '54911' + cleaned + '@c.us';
+    } else if (cleaned.length >= 11) {
+        return cleaned + '@c.us';
+    }
+
+    if (cleaned.length >= 10) {
         return cleaned + '@c.us';
     }
     return null;
@@ -744,15 +752,22 @@ async function resolveContactsForCampaign(labelIds = [], virtualListIds = []) {
             WHERE virtual_list_members.list_id = ?
         `).all(listId);
         
-        const contactsFromList = members.map(m => ({
-            id: { _serialized: m.id, user: m.number },
-            name: m.name,
-            number: m.number,
-            pushname: m.pushname,
-            last_sent_at: m.last_sent_at,
-            sent_count: m.sent_count,
-            sourceVirtualListId: listId
-        }));
+        const contactsFromList = members.map(m => {
+            let normalizedId = m.id;
+            if (normalizedId && normalizedId.includes('@')) {
+                const cleaned = normalizePhoneNumber(normalizedId.split('@')[0]);
+                if (cleaned) normalizedId = cleaned;
+            }
+            return {
+                id: { _serialized: normalizedId, user: m.number },
+                name: m.name,
+                number: m.number,
+                pushname: m.pushname,
+                last_sent_at: m.last_sent_at,
+                sent_count: m.sent_count,
+                sourceVirtualListId: listId
+            };
+        });
         
         allContacts = [...allContacts, ...contactsFromList];
     }
@@ -1030,20 +1045,31 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
                 break;
             }
         } catch (err) {
+            console.error(`[ENGINE] Error al procesar contacto ${contact.id._serialized}: ${err.message}`);
             db.prepare('INSERT INTO logs (campaign_id, contact_id, status, message) VALUES (?, ?, ?, ?)').run(campaignId, contact.id._serialized, 'error', err.message);
+            
+            // Actualizar last_sent_at para que este contacto con número inválido/fallido no quede eternamente primero en la cola
+            try {
+                db.prepare('UPDATE contacts SET last_sent_at = CURRENT_TIMESTAMP WHERE id = ?').run(contact.id._serialized);
+            } catch (e) {}
+
             const statusInfo = getStatus();
             if (
                 statusInfo.status !== 'BOT ONLINE' ||
                 err.message.includes('Bot apagado') ||
                 err.message.includes('desconectado') ||
-                err.message.includes('detached Frame') ||
-                err.message.includes('Execution context was destroyed') ||
                 err.message.includes('Session closed') ||
-                err.message.includes('Protocol error')
+                err.message.includes('Protocol error: Target closed')
             ) {
                 console.error(`[ENGINE] Error crítico de sesión/estado de WhatsApp ("${err.message}"). Abortando campaña ${campaignId}.`);
                 if (activeCampaign) activeCampaign.status = 'cancelled';
                 break;
+            } else {
+                console.warn(`[ENGINE] Error no fatal en destinatario individual. Continuando con el siguiente contacto...`);
+                // Pausa breve de 2 segundos de resguardo antes del siguiente contacto
+                if (await delayWithCancelCheck(2000)) {
+                    break;
+                }
             }
         }
     }
