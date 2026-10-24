@@ -132,9 +132,7 @@ const startClient = async (pairingPhoneNumber = null) => {
         lastQr = null;
         lastPairingCode = null;
         if (io) io.emit('status', currentStatus);
-        if (fs.existsSync(sessionDir)) {
-            try { fs.rmSync(sessionDir, { recursive: true, force: true }); } catch (e) {}
-        }
+        // NO eliminar sessionDir automáticamente para proteger las credenciales ante fallos transitorios
         client = null;
     });
 
