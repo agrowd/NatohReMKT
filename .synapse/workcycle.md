@@ -16,3 +16,7 @@
      - Soporte para estado `CONECTANDO...`: Muestra un spinner animado informando *"¡Código ingresado en tu celular! Vinculando WhatsApp Web y cargando chats. Aguardá unos segundos..."*.
      - `socket.on('qr')` ya no resetea el modal si el usuario está en proceso de vinculación por teléfono.
      - Al completar la vinculación, transiciona suavemente a *"¡WhatsApp Conectado!"* y cierra el modal automáticamente.
+  4. Verificación en Vivo de la Campaña:
+     - El bot se vinculó exitosamente y pasó a `BOT ONLINE`.
+     - Campaña 92 iniciada en segundo plano con la lista virtual "Luz o Hifu".
+     - Verificado en producción que los mensajes se están enviando y entregando de forma secuencial y progresiva (ej. `Ingridluzpulsada`, `Blancaluzpulsada Pereyra`) respetando los delays seguros configurados (60-90s entre contactos y 15-30s entre pasos de mensaje).

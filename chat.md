@@ -392,3 +392,9 @@ El usuario reporta: "Selecciono la lista virtual de luz o hifu, me da como resul
   1. `client.on('qr')` ahora ignora eventos si el bot ya está en `BOT ONLINE` o si hay un código telefónico activo (`lastPairingCode` / `CÓDIGO GENERADO`).
   2. Implementado `client.on('authenticated')` que pone el estado en `CONECTANDO...`.
   3. `client/src/App.jsx` muestra pantalla de transición *"¡Código ingresado en tu celular! Vinculando WhatsApp Web y cargando chats..."* hasta llegar a `BOT ONLINE`.
+
+### Verificación en Vivo (Campaña 92 Activa)
+- Bot conectado con éxito (`BOT ONLINE`).
+- La campaña 92 se encuentra actualmente en estado `running`.
+- Envíos exitosos confirmados en tiempo real (ej. `Ingridluzpulsada` a las 17:42:29 y `Blancaluzpulsada Pereyra` a las 17:44:25).
+- El bucle avanza respetando los tiempos de resguardo estipulados (60-90 segundos entre destinatarios y 15-30 segundos entre pasos del flujo).
