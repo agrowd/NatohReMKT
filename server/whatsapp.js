@@ -32,12 +32,13 @@ const getStatus = () => ({
 });
 
 const startClient = async (pairingPhoneNumber = null) => {
-    // Si ya existe un cliente y queremos cambiar de modo o de número, destruimos la instancia previa
+    // Si ya existe un cliente y queremos cambiar de modo o de número, destruimos la instancia previa limpiando listeners
     if (client) {
         if (pairingPhoneNumber && lastPairingCode && currentStatus === 'CÓDIGO GENERADO') {
             return;
         }
         try {
+            client.removeAllListeners();
             await client.destroy();
         } catch (e) {}
         client = null;
@@ -89,6 +90,17 @@ const startClient = async (pairingPhoneNumber = null) => {
     client = new Client(clientOptions);
 
     client.on('qr', (qr) => {
+        // 1. Si el bot ya está online, ignorar eventos de QR residuales
+        if (currentStatus === 'BOT ONLINE') {
+            console.log('--- QR IGNORADO (BOT ONLINE) ---');
+            return;
+        }
+        // 2. Si se está en proceso de vinculación por código telefónico, NO pisar el código ni cambiar a ESPERANDO ESCANEO
+        if (lastPairingCode || currentStatus === 'CÓDIGO GENERADO' || currentStatus === 'GENERANDO CÓDIGO') {
+            lastQr = qr;
+            console.log('--- QR EN SEGUNDO PLANO (MODO CÓDIGO ACTIVO) ---');
+            return;
+        }
         lastQr = qr;
         lastPairingCode = null;
         currentStatus = 'ESPERANDO ESCANEO';
@@ -105,6 +117,16 @@ const startClient = async (pairingPhoneNumber = null) => {
         console.log('--- PAIRING CODE RECEIVED:', code, '---');
         if (io) {
             io.emit('pairing_code', code);
+            io.emit('status', currentStatus);
+        }
+    });
+
+    client.on('authenticated', () => {
+        console.log('--- CLIENT AUTHENTICATED (CÓDIGO ACEPTADO EN EL CELULAR) ---');
+        currentStatus = 'CONECTANDO...';
+        lastQr = null;
+        if (io) {
+            io.emit('authenticated', true);
             io.emit('status', currentStatus);
         }
     });
@@ -136,11 +158,11 @@ const startClient = async (pairingPhoneNumber = null) => {
         client = null;
     });
 
-    client.on('disconnected', () => {
+    client.on('disconnected', (reason) => {
         currentStatus = 'DESCONECTADO';
         lastQr = null;
         lastPairingCode = null;
-        console.log('--- DISCONNECTED ---');
+        console.log('--- DISCONNECTED ---', reason);
         if (io) io.emit('status', currentStatus);
         client = null;
     });

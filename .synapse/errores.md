@@ -39,3 +39,12 @@
 3. Normalizador automático de números telefónicos locales argentinos (`15...` -> `549...`) en backend, importación, resolución de campañas y migración de base de datos SQLite.
 4. Distinción visual en el frontend entre campañas completadas y canceladas/interrumpidas.
 **Estado:** ✅ FIXED
+
+## ERR-06: Reseteo del código de vinculación al ingresar los 8 dígitos en el celular (2026-10-24)
+**Síntoma:** Al generar el código de 8 dígitos para vincular con el teléfono e ingresarlo en WhatsApp en el celular, la pantalla del sistema web se devolvía de golpe al formulario inicial con el botón "GENERAR CÓDIGO DE 8 DÍGITOS" en lugar de completar la conexión.
+**Root Cause:** Durante el handshake de vinculación por código, WhatsApp Web emite cambios internos de referencia de conexión (`change:ref`). El listener `client.on('qr')` en `server/whatsapp.js` no discriminaba el modo activo y ejecutaba `lastPairingCode = null` y `currentStatus = 'ESPERANDO ESCANEO'`, transmitiendo por socket el reseteo del código hacia la interfaz React antes de que se completara el handshake.
+**Solución:**
+1. Condicionar `client.on('qr')` en `server/whatsapp.js`: Si `currentStatus` es `BOT ONLINE` o si hay un código de vinculación telefónica activo (`lastPairingCode` o `CÓDIGO GENERADO`), se ignora el evento QR para no pisar el código ni el estado.
+2. Escuchar `client.on('authenticated')`: Transiciona inmediatamente a `CONECTANDO...` informando que el celular aceptó los 8 dígitos.
+3. UI feedback en `client/src/App.jsx`: Muestra un spinner animado *"¡Código ingresado en tu celular! Vinculando WhatsApp Web y cargando chats..."* hasta que llega el evento `ready` (`BOT ONLINE`).
+**Estado:** ✅ FIXED

@@ -1,26 +1,18 @@
 # Workcycle Log - Sesión Actual
 
 ## 📋 Tarea Completada
-- **Objetivo:** Resolver el problema donde al iniciar la campaña con la lista virtual "Luz o Hifu" se cancelaba inmediatamente en 1 segundo mostrando un cartel de finalización falsa sin enviar mensajes, protegiendo rigurosamente la sesión de WhatsApp activa.
+- **Objetivo:** Resolver el problema donde al ingresar el código de vinculación de 8 dígitos en WhatsApp desde el celular, la pantalla del sistema devolvía al usuario al formulario inicial ("GENERAR CÓDIGO DE 8 DÍGITOS") en vez de completar la conexión a "BOT ONLINE".
 - **Acciones Realizadas:**
   1. Diagnóstico de Logs en VPS (`/api/admin/vps-logs`):
-     - Identificado que las campañas 90 y 91 fallaron en el primer contacto `15409177996@c.us` ("Claudiahifufacialjueves") debido a que Puppeteer arrojó `Attempted to use detached Frame`.
-     - `server/index.js` contenía `err.message.includes('detached Frame')` dentro de la condición de aborto de campaña, provocando que un error en un único contacto cancelara toda la campaña (0/742).
-     - El frontend `client/src/App.jsx` mostraba el alert de éxito absoluto al recibir `campaign_finished` sin validar `status === 'cancelled'`.
-  2. Blindaje del Motor de WhatsApp (`server/whatsapp.js`):
-     - Agregados flags de estabilidad a Puppeteer: `--disable-features=IsolateOrigins,site-per-process`, `--disable-site-isolation-trials`, `--disable-gpu`, `--disable-accelerated-2d-canvas`.
-     - Implementada limpieza preventiva de `SingletonLock` de Chromium para evitar bloqueos tras reinicios.
-     - Implementada normalización profunda de números telefónicos argentinos (`15...` -> `549...`) antes del envío.
-     - En `sendMessage`, manejo con retry ante advertencias de detached frame y resolución alternativa de JID con `client.getNumberId()` y precarga con `client.getChatById()`.
-  3. Desacoplamiento de Fallos por Lead (`server/index.js`):
-     - Un fallo en un lead individual ya no cancela la campaña mientras el bot esté `BOT ONLINE`.
-     - Se registra el error en `logs` (`status = 'error'`), se actualiza `contacts.last_sent_at` para rotar la cola y evitar que un contacto roto quede eternamente como #1 bloqueando la lista, se pausa 2s por resguardo y se continúa con el resto de la lista.
-     - Función `normalizePhoneNumber` mejorada para Argentina.
-     - Normalización de IDs al resolver contactos de listas virtuales.
-  4. Migración de Base de Datos (`server/database.js`):
-     - Migración automática al iniciar para normalizar contactos preexistentes en SQLite con prefijo `15...` a formato internacional `549...`.
-  5. Interfaz de Usuario (`client/src/App.jsx`):
-     - `socket.on('campaign_finished')` ahora distingue entre campañas completadas y canceladas/interrumpidas para no engañar al usuario.
-  6. Compilación y Despliegue:
-     - Rebuild de Vite (`npm run build` en cliente) exitoso.
-     - Validación sintáctica de Node sin errores.
+     - Detectado que WhatsApp Web emite eventos `qr` (`change:ref`) en segundo plano mientras se vincula con código telefónico.
+     - `server/whatsapp.js` escuchaba el evento `client.on('qr')` de forma no condicionada y reseteaba `lastPairingCode = null` y `currentStatus = 'ESPERANDO ESCANEO'`.
+     - Esto provocaba que el frontend recibiera `pairingCode = null`, desmontando la pantalla con los 8 dígitos y re-mostrando el formulario previo de entrada.
+  2. Blindaje de Eventos en el Backend (`server/whatsapp.js`):
+     - Si el bot está en modo código (`lastPairingCode` activo o `currentStatus === 'CÓDIGO GENERADO'`), `client.on('qr')` ignora la sobreescritura del código y mantiene el estado.
+     - Si el bot ya está en `BOT ONLINE`, ignora cualquier evento residual de QR.
+     - Agregado listener `client.on('authenticated')` para notificar al instante cuando el celular acepta los 8 dígitos y poner el estado en `CONECTANDO...`.
+     - `startClient()` ahora ejecuta `client.removeAllListeners()` antes de `client.destroy()` para evitar colisiones con instancias previas.
+  3. Experiencia de Usuario en el Frontend (`client/src/App.jsx`):
+     - Soporte para estado `CONECTANDO...`: Muestra un spinner animado informando *"¡Código ingresado en tu celular! Vinculando WhatsApp Web y cargando chats. Aguardá unos segundos..."*.
+     - `socket.on('qr')` ya no resetea el modal si el usuario está en proceso de vinculación por teléfono.
+     - Al completar la vinculación, transiciona suavemente a *"¡WhatsApp Conectado!"* y cierra el modal automáticamente.

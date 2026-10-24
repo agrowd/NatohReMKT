@@ -214,14 +214,17 @@ function App() {
     });
     socket.on('qr', (data) => { 
       setQr(data); 
-      setStatus('ESPERANDO ESCANEO'); 
-      setShowQrModal(true); 
+      setStatus(prev => (prev === 'CÓDIGO GENERADO' || prev === 'CONECTANDO...' || prev === 'BOT ONLINE' ? prev : 'ESPERANDO ESCANEO')); 
     });
     socket.on('pairing_code', (code) => {
       setPairingCode(code);
       setIsRequestingPairing(false);
       setConnectTab('phone');
       setShowQrModal(true);
+    });
+    socket.on('authenticated', () => {
+      setStatus('CONECTANDO...');
+      setPairingCode(null);
     });
     socket.on('ready', () => { 
       setStatus('BOT ONLINE'); 
@@ -305,6 +308,7 @@ function App() {
       socket.off('search_match'); 
       socket.off('bulk_tag_progress'); 
       socket.off('pairing_code');
+      socket.off('authenticated');
     };
 }, [user]);
 
@@ -342,6 +346,16 @@ function App() {
           <Icon name="check" size={40} color="var(--primary)" style={{ margin: '0 auto 0.5rem' }} />
           <div style={{ fontSize: '1.05rem', fontWeight: 800 }}>¡WhatsApp Conectado!</div>
           <div style={{ fontSize: '0.8rem', opacity: 0.8, marginTop: '4px' }}>El bot está en línea y sincronizado con tu teléfono.</div>
+        </div>
+      );
+    }
+
+    if (status === 'CONECTANDO...') {
+      return (
+        <div className="success-badge" style={{ padding: '1.5rem', margin: '1rem 0', textAlign: 'center' }}>
+          <Icon name="refresh" size={40} color="var(--primary)" className="spin-animation" style={{ margin: '0 auto 0.5rem' }} />
+          <div style={{ fontSize: '1.05rem', fontWeight: 800 }}>¡Código ingresado en tu celular!</div>
+          <div style={{ fontSize: '0.8rem', opacity: 0.8, marginTop: '4px' }}>Vinculando WhatsApp Web y cargando chats. Aguardá unos segundos...</div>
         </div>
       );
     }

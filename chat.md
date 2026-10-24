@@ -384,3 +384,11 @@ El usuario reporta: "Selecciono la lista virtual de luz o hifu, me da como resul
    - Migración automática en SQLite al arrancar el servidor para actualizar contactos preexistentes guardados con `15%@c.us`.
 4. **Notificaciones Claras en el Frontend (`client/src/App.jsx`):**
    - `campaign_finished` ahora evalúa `data.status`: informa si la campaña fue detenida/interrumpida o si finalizó exitosamente.
+
+### Segunda Consulta: Reseteo de Pantalla al Ingresar el Código de 8 Dígitos en el Celular
+- **Problema:** Al ingresar el código de 8 caracteres en WhatsApp en el celular, la pantalla del sistema web devolvía inmediatamente al usuario al formulario previo ("GENERAR CÓDIGO DE 8 DÍGITOS") en lugar de conectar.
+- **Causa Raíz:** `server/whatsapp.js` escuchaba el evento `client.on('qr')` que WhatsApp Web disparaba internamente durante el handshake y ejecutaba `lastPairingCode = null` y `currentStatus = 'ESPERANDO ESCANEO'`, transmitiendo por socket el reseteo del código hacia la interfaz React antes de que se completara el handshake.
+- **Solución:**
+  1. `client.on('qr')` ahora ignora eventos si el bot ya está en `BOT ONLINE` o si hay un código telefónico activo (`lastPairingCode` / `CÓDIGO GENERADO`).
+  2. Implementado `client.on('authenticated')` que pone el estado en `CONECTANDO...`.
+  3. `client/src/App.jsx` muestra pantalla de transición *"¡Código ingresado en tu celular! Vinculando WhatsApp Web y cargando chats..."* hasta llegar a `BOT ONLINE`.
