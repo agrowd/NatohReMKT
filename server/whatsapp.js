@@ -65,6 +65,7 @@ const startClient = async (pairingPhoneNumber = null) => {
         authStrategy: new LocalAuth({ dataPath: sessionDir }),
         puppeteer: {
             headless: true,
+            protocolTimeout: 60000,
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
@@ -361,14 +362,16 @@ const normalizePhoneRecipient = (raw) => {
                 rest = rest.substring(0, idx) + rest.substring(idx + 2);
             }
         }
-        if (rest.length === 8) rest = '11' + rest;
+        if (rest.startsWith('1111')) rest = rest.substring(2);
+        if (rest.length === 8 && !rest.startsWith('11')) rest = '11' + rest;
         return '549' + rest + '@c.us';
     }
 
     if (digits.startsWith('15')) {
         let rest = digits.substring(2);
-        if (rest.length === 8) return '54911' + rest + '@c.us';
-        if (rest.length === 10 && rest.startsWith('11')) return '549' + rest + '@c.us';
+        if (rest.startsWith('1111')) rest = rest.substring(2);
+        if (rest.length === 8 && !rest.startsWith('11')) return '54911' + rest + '@c.us';
+        if (rest.length === 8 && rest.startsWith('11')) return '549' + rest + '@c.us';
         if (rest.length === 10) return '549' + rest + '@c.us';
         return '549' + rest + '@c.us';
     }
@@ -383,11 +386,15 @@ const normalizePhoneRecipient = (raw) => {
         }
     }
 
+    if (digits.startsWith('1111')) digits = digits.substring(2);
     if (digits.length === 10) {
         return '549' + digits + '@c.us';
     }
-    if (digits.length === 8) {
+    if (digits.length === 8 && !digits.startsWith('11')) {
         return '54911' + digits + '@c.us';
+    }
+    if (digits.length === 8 && digits.startsWith('11')) {
+        return '549' + digits + '@c.us';
     }
     if (digits.length >= 11) {
         return digits + '@c.us';
@@ -395,36 +402,94 @@ const normalizePhoneRecipient = (raw) => {
     return target;
 };
 
+const resolveTargetChatId = async (targetId) => {
+    if (!client || currentStatus !== 'BOT ONLINE') throw new Error('Bot apagado o desconectado');
+    const rawNumber = targetId.includes('@') ? targetId.split('@')[0] : targetId;
+
+    const queryExists = async (num) => {
+        try {
+            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000));
+            const queryPromise = client.getNumberId(num);
+            return await Promise.race([queryPromise, timeoutPromise]);
+        } catch (e) {
+            return null;
+        }
+    };
+
+    // 1. Probar con getNumberId directo
+    let numberId = await queryExists(rawNumber);
+    if (numberId && numberId._serialized) {
+        return numberId._serialized;
+    }
+
+    // 2. Probar variantes para números de Argentina (con o sin 9)
+    if (rawNumber.startsWith('549')) {
+        const without9 = '54' + rawNumber.substring(3);
+        numberId = await queryExists(without9);
+        if (numberId && numberId._serialized) {
+            return numberId._serialized;
+        }
+    } else if (rawNumber.startsWith('54') && !rawNumber.startsWith('549')) {
+        const with9 = '549' + rawNumber.substring(2);
+        numberId = await queryExists(with9);
+        if (numberId && numberId._serialized) {
+            return numberId._serialized;
+        }
+    }
+
+    // 3. Probar si el chat ya existe en el DOM/Store local de WhatsApp Web
+    try {
+        const chatExists = await client.pupPage.evaluate((id) => {
+            try {
+                const wid = window.require('WAWebWidFactory').createWid(id);
+                return Boolean(window.require('WAWebCollections').Chat.get(wid));
+            } catch (e) {
+                return false;
+            }
+        }, targetId);
+        if (chatExists) {
+            return targetId;
+        }
+    } catch (e) {}
+
+    // No existe en WhatsApp
+    throw new Error(`El número ${rawNumber} no está registrado en WhatsApp o es inválido.`);
+};
+
 const sendMessage = async (to, content, media = null) => {
     if (!client || currentStatus !== 'BOT ONLINE') throw new Error('Bot apagado o desconectado');
     let targetId = normalizePhoneRecipient(to);
+    
+    // Resolver y validar que el contacto esté registrado en WhatsApp antes de enviar
+    const validChatId = await resolveTargetChatId(targetId);
 
     const executeSend = async (id) => {
-        if (media) {
-            return await client.sendMessage(id, MessageMedia.fromFilePath(media), { caption: content });
-        }
-        return await client.sendMessage(id, content);
+        const sendPromise = media
+            ? client.sendMessage(id, MessageMedia.fromFilePath(media), { caption: content })
+            : client.sendMessage(id, content);
+        
+        const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Timeout de 35s esperando confirmación de envío en WhatsApp Web')), 35000);
+        });
+
+        return await Promise.race([sendPromise, timeoutPromise]);
     };
 
     try {
-        return await executeSend(targetId);
+        return await executeSend(validChatId);
     } catch (err) {
         let errMsg = err.message || '';
         
         // Si falló por frame desprendido o contexto destruido en Puppeteer, intentar una re-ejecución tras 1.5s
         if (errMsg.includes('detached Frame') || errMsg.includes('Execution context was destroyed')) {
-            console.warn(`[WHATSAPP] Advertencia de frame al enviar a ${targetId} (${errMsg}). Reintentando en 1500ms...`);
+            console.warn(`[WHATSAPP] Advertencia de frame al enviar a ${validChatId} (${errMsg}). Reintentando en 1500ms...`);
             await new Promise(r => setTimeout(r, 1500));
             if (client && currentStatus === 'BOT ONLINE') {
-                try {
-                    return await executeSend(targetId);
-                } catch (retryFrameErr) {
-                    errMsg = retryFrameErr.message || errMsg;
-                }
+                return await executeSend(validChatId);
             }
         }
 
-        // Intento de resolución profunda con getNumberId y getChatById
+        // Intento secundario con getChatById si aún fallara
         if (
             errMsg.includes('No LID') ||
             errMsg.includes('Data passed to getter') ||
@@ -433,29 +498,14 @@ const sendMessage = async (to, content, media = null) => {
             errMsg.includes('detached Frame')
         ) {
             try {
-                const rawNumber = targetId.includes('@') ? targetId.split('@')[0] : targetId;
-                const numberId = await client.getNumberId(rawNumber);
-                if (numberId && numberId._serialized) {
-                    targetId = numberId._serialized;
-                }
-
-                try {
-                    const chat = await client.getChatById(targetId);
-                    if (chat) {
-                        if (media) {
-                            return await chat.sendMessage(MessageMedia.fromFilePath(media), { caption: content });
-                        }
-                        return await chat.sendMessage(content);
+                const chat = await client.getChatById(validChatId);
+                if (chat) {
+                    if (media) {
+                        return await chat.sendMessage(MessageMedia.fromFilePath(media), { caption: content });
                     }
-                } catch (chatErr) {}
-
-                return await executeSend(targetId);
-            } catch (retryErr) {
-                if (retryErr.message && retryErr.message.includes('No LID')) {
-                    throw new Error('El número no está registrado en WhatsApp o es inválido (No LID)');
+                    return await chat.sendMessage(content);
                 }
-                throw retryErr;
-            }
+            } catch (chatErr) {}
         }
         throw err;
     }

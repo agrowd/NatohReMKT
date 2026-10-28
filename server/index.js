@@ -83,12 +83,21 @@ app.get('/api/admin/vps-logs', (req, res) => {
             ORDER BY l.id DESC LIMIT 50
         `).all();
 
+        const recentSentLogs = db.prepare(`
+            SELECT l.*, c.name as contact_name
+            FROM logs l
+            LEFT JOIN contacts c ON l.contact_id = c.id
+            WHERE l.status = 'sent'
+            ORDER BY l.id DESC LIMIT 20
+        `).all();
+
         res.json({
             status: getStatus(),
             activeCampaign,
             pm2Logs,
             lastCampaign,
-            recentLogs
+            recentLogs,
+            recentSentLogs
         });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -278,14 +287,16 @@ function normalizePhoneNumber(num) {
                 rest = rest.substring(0, idx) + rest.substring(idx + 2);
             }
         }
-        if (rest.length === 8) rest = '11' + rest;
+        if (rest.startsWith('1111')) rest = rest.substring(2);
+        if (rest.length === 8 && !rest.startsWith('11')) rest = '11' + rest;
         return '549' + rest + '@c.us';
     }
 
     if (cleaned.startsWith('15')) {
         let rest = cleaned.substring(2);
-        if (rest.length === 8) return '54911' + rest + '@c.us';
-        if (rest.length === 10 && rest.startsWith('11')) return '549' + rest + '@c.us';
+        if (rest.startsWith('1111')) rest = rest.substring(2);
+        if (rest.length === 8 && !rest.startsWith('11')) return '54911' + rest + '@c.us';
+        if (rest.length === 8 && rest.startsWith('11')) return '549' + rest + '@c.us';
         if (rest.length === 10) return '549' + rest + '@c.us';
         return '549' + rest + '@c.us';
     }
@@ -300,17 +311,17 @@ function normalizePhoneNumber(num) {
         }
     }
 
+    if (cleaned.startsWith('1111')) cleaned = cleaned.substring(2);
     if (cleaned.length === 10) {
         return '549' + cleaned + '@c.us';
-    } else if (cleaned.length === 8) {
+    } else if (cleaned.length === 8 && !cleaned.startsWith('11')) {
         return '54911' + cleaned + '@c.us';
+    } else if (cleaned.length === 8 && cleaned.startsWith('11')) {
+        return '549' + cleaned + '@c.us';
     } else if (cleaned.length >= 11) {
         return cleaned + '@c.us';
     }
 
-    if (cleaned.length >= 10) {
-        return cleaned + '@c.us';
-    }
     return null;
 }
 
@@ -853,6 +864,15 @@ app.post('/api/campaigns/preview-audience', async (req, res) => {
 app.post('/api/campaigns', async (req, res) => {
     const { flowId, labelIds = [], virtualListIds = [], config } = req.body; 
     try {
+        if (activeCampaign && activeCampaign.status === 'running') {
+            console.log(`[ENGINE] Deteniendo campaña activa previa ${activeCampaign.campaignId} antes de iniciar nueva.`);
+            db.prepare("UPDATE campaigns SET status = 'cancelled' WHERE id = ?").run(activeCampaign.campaignId);
+            activeCampaign.status = 'cancelled';
+            activeCampaign = null;
+            await new Promise(r => setTimeout(r, 600));
+        }
+        db.prepare("UPDATE campaigns SET status = 'cancelled' WHERE status = 'running'").run();
+
         const flow = db.prepare('SELECT * FROM flows WHERE id = ?').get(flowId);
         const uniqueContacts = await resolveContactsForCampaign(labelIds, virtualListIds);
         
@@ -895,12 +915,15 @@ app.post('/api/campaigns/stop', (req, res) => {
 });
 
 // --- Engine ---
-async function delayWithCancelCheck(ms) {
+async function delayWithCancelCheck(ms, expectedCampaignId = null) {
     const checkInterval = 500; // check every 500ms
     let elapsed = 0;
     while (elapsed < ms) {
-        if (activeCampaign && activeCampaign.status === 'cancelled') {
+        if (!activeCampaign || activeCampaign.status === 'cancelled') {
             return true; // was cancelled
+        }
+        if (expectedCampaignId && activeCampaign.campaignId !== expectedCampaignId) {
+            return true; // another campaign started
         }
         await new Promise(r => setTimeout(r, checkInterval));
         elapsed += checkInterval;
@@ -912,13 +935,18 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
     db.prepare('UPDATE campaigns SET status = ? WHERE id = ?').run('running', campaignId);
     let sentCount = 0;
     let skippedCount = 0;
-    if (activeCampaign) {
+    if (activeCampaign && activeCampaign.campaignId === campaignId) {
         activeCampaign.sentCount = 0;
         activeCampaign.skippedCount = 0;
     }
 
+    const shouldAbort = () => {
+        return !activeCampaign || activeCampaign.campaignId !== campaignId || activeCampaign.status !== 'running';
+    };
+
     for (const contact of contacts) {
-        if (activeCampaign && activeCampaign.status === 'cancelled') {
+        if (shouldAbort()) {
+            console.log(`[ENGINE] Campaña ${campaignId} detenida porque ya no es la campaña activa.`);
             break;
         }
         try {
@@ -964,7 +992,7 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
 
                 if (recentSend && recentSend.count > 0) {
                     skippedCount++;
-                    if (activeCampaign) {
+                    if (activeCampaign && activeCampaign.campaignId === campaignId) {
                         activeCampaign.skippedCount = skippedCount;
                         if (skippedCount % 5 === 0 || skippedCount === 1) {
                             io.emit('campaign_progress', activeCampaign);
@@ -977,14 +1005,14 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
             }
 
             // Verificar Límite de Lote (Batch Limit)
-            if (config.batchLimit && sentCount >= config.batchLimit) {
-                console.log(`[ENGINE] Límite de lote alcanzado (${config.batchLimit}). Deteniendo.`);
+            if (config && config.batchLimit && sentCount >= config.batchLimit) {
+                console.log(`[ENGINE] Límite de lote alcanzado (${config.batchLimit}). Finalizando campaña ${campaignId}.`);
                 break; 
             }
 
             let wasStepCancelled = false;
             for (const step of steps) {
-                if (activeCampaign && activeCampaign.status === 'cancelled') {
+                if (shouldAbort()) {
                     wasStepCancelled = true;
                     break;
                 }
@@ -998,27 +1026,29 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
                         }
                     }
 
-                    const resolvedContent = resolveSpintax(baseContent); // Mantenemos spintax por si alguien lo escribe manual
+                    const resolvedContent = resolveSpintax(baseContent);
                     await sendMessage(contact.id._serialized, resolvedContent, step.mediaPath);
                     const stepDelay = Math.floor(Math.random() * (config.maxStepDelay - config.minStepDelay + 1) + config.minStepDelay);
-                    if (await delayWithCancelCheck(stepDelay * 1000)) {
+                    if (await delayWithCancelCheck(stepDelay * 1000, campaignId) || shouldAbort()) {
                         wasStepCancelled = true;
                         break;
                     }
                 } else if (step.type === 'delay') {
-                    if (await delayWithCancelCheck(step.duration * 1000)) {
+                    if (await delayWithCancelCheck(step.duration * 1000, campaignId) || shouldAbort()) {
                         wasStepCancelled = true;
                         break;
                     }
                 }
             }
             
-            if (wasStepCancelled) {
+            if (wasStepCancelled || shouldAbort()) {
                 break;
             }
             
             sentCount++;
-            if(activeCampaign) activeCampaign.sentCount = sentCount;
+            if (activeCampaign && activeCampaign.campaignId === campaignId) {
+                activeCampaign.sentCount = sentCount;
+            }
             db.prepare('UPDATE campaigns SET sent_count = ? WHERE id = ?').run(sentCount, campaignId);
             db.prepare('INSERT INTO logs (campaign_id, contact_id, status) VALUES (?, ?, ?)').run(campaignId, contact.id._serialized, 'sent');
             try {
@@ -1026,7 +1056,7 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
             } catch (e) {}
             
             // Lógica de Limpieza (Auto-Remove)
-            if (config.autoRemove) {
+            if (config && config.autoRemove) {
                 if (contact.sourceLabelId) {
                     db.prepare('DELETE FROM label_members WHERE label_id = ? AND contact_id = ?').run(contact.sourceLabelId, contact.id._serialized);
                 }
@@ -1035,13 +1065,15 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
                 }
             }
 
-            io.emit('campaign_progress', activeCampaign);
+            if (activeCampaign && activeCampaign.campaignId === campaignId) {
+                io.emit('campaign_progress', activeCampaign);
+            }
             
-            if (activeCampaign && activeCampaign.status === 'cancelled') {
+            if (shouldAbort()) {
                 break;
             }
             const leadDelay = Math.floor(Math.random() * (config.maxLeadDelay - config.minLeadDelay + 1) + config.minLeadDelay);
-            if (await delayWithCancelCheck(leadDelay * 1000)) {
+            if (await delayWithCancelCheck(leadDelay * 1000, campaignId) || shouldAbort()) {
                 break;
             }
         } catch (err) {
@@ -1062,22 +1094,27 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
                 err.message.includes('Protocol error: Target closed')
             ) {
                 console.error(`[ENGINE] Error crítico de sesión/estado de WhatsApp ("${err.message}"). Abortando campaña ${campaignId}.`);
-                if (activeCampaign) activeCampaign.status = 'cancelled';
+                if (activeCampaign && activeCampaign.campaignId === campaignId) {
+                    activeCampaign.status = 'cancelled';
+                }
                 break;
             } else {
-                console.warn(`[ENGINE] Error no fatal en destinatario individual. Continuando con el siguiente contacto...`);
+                console.warn(`[ENGINE] Error no fatal en destinatario individual (${contact.id._serialized}). Continuando con el siguiente contacto...`);
                 // Pausa breve de 2 segundos de resguardo antes del siguiente contacto
-                if (await delayWithCancelCheck(2000)) {
+                if (shouldAbort() || await delayWithCancelCheck(2000, campaignId)) {
                     break;
                 }
             }
         }
     }
     
-    const finalStatus = (activeCampaign && activeCampaign.status === 'cancelled') ? 'cancelled' : 'completed';
+    const isStillActive = activeCampaign && activeCampaign.campaignId === campaignId;
+    const finalStatus = (isStillActive && activeCampaign.status === 'running') ? 'completed' : 'cancelled';
     db.prepare('UPDATE campaigns SET status = ? WHERE id = ?').run(finalStatus, campaignId);
-    activeCampaign = null;
-    io.emit('campaign_finished', { campaignId, status: finalStatus });
+    if (isStillActive) {
+        activeCampaign = null;
+        io.emit('campaign_finished', { campaignId, status: finalStatus, sentCount });
+    }
 }
 
 function resolveSpintax(text) {

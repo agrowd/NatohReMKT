@@ -398,3 +398,31 @@ El usuario reporta: "Selecciono la lista virtual de luz o hifu, me da como resul
 - La campaña 92 se encuentra actualmente en estado `running`.
 - Envíos exitosos confirmados en tiempo real (ej. `Ingridluzpulsada` a las 17:42:29 y `Blancaluzpulsada Pereyra` a las 17:44:25).
 - El bucle avanza respetando los tiempos de resguardo estipulados (60-90 segundos entre destinatarios y 15-30 segundos entre pasos del flujo).
+
+---
+
+## Sesión: Solución a Bloqueo de Envíos, ProtocolTimeout CDP y Bucles Zombie (2026-10-28)
+
+### Consulta del Usuario
+"No se están enviando los mensajes, revisa, me dice que se envían pero arriba no aparece el contador de enviados ni nada. Revisa bien todo, tiene que funcionar sin perder la sesión de WhatsApp y enviar los mensajes"
+
+### Diagnóstico de la Falla
+1. **Error en Logs:** En SQLite y PM2, todos los contactos en campañas 94, 95 y 96 arrojaban:
+   `Runtime.callFunctionOn timed out. Increase the 'protocolTimeout' setting in launch/connect calls for a higher timeout if needed.`
+2. **Causa Raíz Principal:** Al llamar a `client.sendMessage()` directamente para números no registrados o con prefijos corruptos (ej. `5491111...`), el método interno de WhatsApp Web `findOrCreateLatestChat` quedaba esperando indefinidamente una respuesta del servidor de WhatsApp que nunca llegaba.
+3. **Causa Secundaria (Bucles Zombie):** `startCampaignProcess` no verificaba que la campaña en ejecución correspondiera al ID activo (`activeCampaign.campaignId === campaignId`), permitiendo que loops huérfanos continuaran intentando enviar mensajes concurrentemente y saturaran el protocolo CDP de Puppeteer.
+
+### Soluciones Implementadas
+1. **Pre-validación Canónica (`resolveTargetChatId`) en `server/whatsapp.js`:**
+   - Pre-chequeo con `client.getNumberId(...)` (timeout 8s). Si el número no está en WhatsApp, se descarta limpiamente en <1s sin tocar `sendMessage` ni colgar Chromium.
+   - Variantes para prefijos argentinos (`549...` y `54...`).
+   - Envío protegido con `Promise.race` y timeout de 35s.
+   - `protocolTimeout: 60000` en opciones de Puppeteer.
+2. **Blindaje Anti-Bucles Zombie (`server/index.js`):**
+   - Validación estricta de `activeCampaign.campaignId === campaignId` y `status === 'running'` en cada iteración del bucle, pasos y delays.
+   - Cancelación automática e inmediata de campañas previas al iniciar una nueva en `/api/campaigns`.
+3. **Corrección de Normalización:**
+   - Corrección en `normalizePhoneNumber` y `normalizePhoneRecipient` para evitar duplicaciones `1111`.
+4. **Claridad en Frontend (`client/src/App.jsx`):**
+   - Notificación diferenciada si una campaña finaliza sin nuevos envíos debido a exclusión anti-spam o destinatarios no registrados.
+   - Protección total de `server/sessions/` para mantener la sesión de WhatsApp Web intacta.

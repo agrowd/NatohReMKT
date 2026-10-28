@@ -240,8 +240,10 @@ function App() {
       fetchCampaigns(); 
       if (data && data.status === 'cancelled') {
         alert('⚠️ La campaña fue detenida o interrumpida.');
+      } else if (data && data.sentCount === 0) {
+        alert('ℹ️ Campaña Finalizada: No se enviaron mensajes nuevos porque los destinatarios ya fueron contactados en el período de exclusión anti-spam o sus números no están registrados en WhatsApp.');
       } else {
-        alert('🚀 ¡Campaña Finalizada! Todos los mensajes han sido enviados o procesados exitosamente.');
+        alert(`🚀 ¡Campaña Finalizada! Se enviaron ${data?.sentCount !== undefined ? data.sentCount : 'los'} mensajes exitosamente.`);
       }
     });
     

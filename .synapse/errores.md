@@ -48,3 +48,17 @@
 2. Escuchar `client.on('authenticated')`: Transiciona inmediatamente a `CONECTANDO...` informando que el celular aceptó los 8 dígitos.
 3. UI feedback en `client/src/App.jsx`: Muestra un spinner animado *"¡Código ingresado en tu celular! Vinculando WhatsApp Web y cargando chats..."* hasta que llega el evento `ready` (`BOT ONLINE`).
 **Estado:** ✅ FIXED
+
+## ERR-07: Bloqueo de envíos por ProtocolTimeout CDP y Bucles Zombie de Campañas Concurrentes (2026-10-28)
+**Síntoma:** El dashboard muestra que la campaña se está ejecutando, pero el contador de enviados en la barra superior se queda en 0. Los mensajes nunca llegan a los destinatarios en WhatsApp. En los logs de PM2 y base de datos, cada contacto arroja: `Runtime.callFunctionOn timed out. Increase the 'protocolTimeout' setting in launch/connect calls for a higher timeout if needed.`
+**Root Cause:**
+1. Cuando un destinatario tiene un formato telefónico corrupto (ej. prefijo duplicado `1111`) o no existe en WhatsApp, la función interna de WhatsApp Web `findOrCreateLatestChat` envía una consulta de red que nunca resuelve, dejando una promesa colgada en Chromium.
+2. Puppeteer CDP excedía su timeout predeterminado de 30 segundos (`Runtime.callFunctionOn timed out`).
+3. Al acumularse llamadas fallidas, loops de campañas previas (ej. campaña 95) continuaban iterando en segundo plano porque `startCampaignProcess` no verificaba que `activeCampaign.campaignId === campaignId`. Esto producía múltiples bucles asíncronos concurrentes que saturaban el hilo principal de Chromium.
+**Solución:**
+1. Pre-validación canónica (`resolveTargetChatId`): Antes de enviar, se consulta `client.getNumberId(...)` con timeout de 8s. Si el número no está registrado en WhatsApp o es inválido, se descarta limpiamente en <1s sin invocar `sendMessage`, evitando colgar WhatsApp Web.
+2. `protocolTimeout: 60000` configurado en las opciones de Puppeteer.
+3. Blindaje anti-bucles zombie en `startCampaignProcess`: Se valida `activeCampaign.campaignId === campaignId` y `status === 'running'` en cada iteración y delay. Al arrancar una campaña nueva, cualquier bucle previo se cancela inmediatamente.
+4. Reparación en el normalizador de números para eliminar duplicados de prefijos (`1111` -> `11`).
+5. Feedback visual claro en `App.jsx` si una campaña finaliza con 0 enviados debido a exclusión anti-spam o destinatarios no registrados.
+**Estado:** ✅ FIXED
