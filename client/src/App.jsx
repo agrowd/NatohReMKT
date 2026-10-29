@@ -418,7 +418,7 @@ function App() {
             </div>
           )
         ) : (
-          pairingCode ? (
+          (pairingCode || isRequestingPairing) ? (
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: '0.82rem', color: 'var(--text-dim)', marginBottom: '0.25rem' }}>
                 Código de vinculación para: <b style={{ color: '#fff' }}>{phoneToPair}</b>
@@ -431,16 +431,16 @@ function App() {
                       <Icon name="refresh" size={20} className="spin-animation" /> GENERANDO NUEVO CÓDIGO...
                     </span>
                   ) : (
-                    pairingCode.length === 8 
+                    pairingCode && (pairingCode.length === 8 
                       ? `${pairingCode.slice(0, 4)} - ${pairingCode.slice(4)}` 
-                      : pairingCode
+                      : pairingCode)
                   )}
                 </div>
                 <button 
                   type="button"
                   className="btn" 
                   onClick={() => handleCopyCode(pairingCode)}
-                  disabled={isRequestingPairing}
+                  disabled={isRequestingPairing || !pairingCode}
                   style={{ 
                     marginTop: '0.9rem', 
                     background: copiedCode ? 'var(--primary)' : 'rgba(255,255,255,0.08)', 
@@ -462,6 +462,12 @@ function App() {
                 <div><b>5.</b> Ingresá este código de 8 dígitos en la pantalla de tu celular</div>
               </div>
 
+              {pairingError && (
+                <div style={{ color: '#ff4d4f', fontSize: '0.8rem', marginTop: '0.75rem', textAlign: 'center', background: 'rgba(255, 77, 79, 0.1)', padding: '0.5rem', borderRadius: '8px' }}>
+                  {pairingError}
+                </div>
+              )}
+
               <div style={{ display: 'flex', gap: '8px', marginTop: '1rem' }}>
                 <button 
                   type="button"
@@ -469,6 +475,8 @@ function App() {
                   style={{ flex: 1, background: 'rgba(255,255,255,0.05)', fontSize: '0.8rem' }}
                   onClick={() => { 
                     setPairingCode(null); 
+                    setIsRequestingPairing(false);
+                    setPairingError('');
                     axios.post(`${API_URL}/api/whatsapp/cancel-pair-phone`).catch(() => {});
                   }}
                 >

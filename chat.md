@@ -449,3 +449,11 @@ El usuario reporta: "Selecciono la lista virtual de luz o hifu, me da como resul
 3. **Indicador Visual Reactivo (`client/src/App.jsx`):**
    - Al pulsar "Re-generar código", el cuadro de dígitos muestra inmediatamente un spinner animado *"GENERANDO NUEVO CÓDIGO..."* hasta que llega el nuevo código.
    - El botón "Cambiar número" ahora cancela la solicitud activa en el backend vía `/api/whatsapp/cancel-pair-phone`.
+4. **Gestión Robusta de Procesos y Cerrojos de Chromium (`terminateClient` + `cleanChromiumLocks`):**
+   - Timeout de 2s para el cierre de Puppeteer con fallback a `SIGKILL` y `pkill -9 -f "sessions/session"` en Linux.
+   - Limpieza automática de cerrojos (`SingletonLock`, `SingletonCookie`, `SingletonSocket`, `DevToolsActivePort`) para evitar bloqueos tras reinicios.
+5. **Blindaje de la API en Node.js:**
+   - Handlers globales para `unhandledRejection` y `uncaughtException`.
+   - Reinicio de PM2 desacoplado mediante `process.exit(0)` diferido, evitando fallos por subprocesos muertos.
+6. **Mantenimiento del Estado de la Interfaz:**
+   - La vista de vinculación telefónica mantiene el recuadro con el spinner de carga sin volver bruscamente al formulario inicial gracias a `(pairingCode || isRequestingPairing)`.

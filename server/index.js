@@ -117,15 +117,18 @@ app.post('/api/admin/deploy-update', (req, res) => {
     }
 });
 
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('[UNHANDLED REJECTION]', reason);
+});
+process.on('uncaughtException', (err) => {
+    console.error('[UNCAUGHT EXCEPTION]', err);
+});
+
 app.post('/api/admin/restart-api', (req, res) => {
     try {
         res.json({ success: true, message: 'Reiniciando natoh-api en 500ms...' });
         setTimeout(() => {
-            try {
-                execSync('pm2 restart natoh-api');
-            } catch (e) {
-                console.error('Error restarting natoh-api:', e.message);
-            }
+            process.exit(0);
         }, 500);
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -140,7 +143,7 @@ app.post('/api/admin/build-ui', (req, res) => {
         const buildOut = execSync('npm run build', { cwd: clientDir, encoding: 'utf8', timeout: 60000 });
         let pm2Out = '';
         try {
-            pm2Out = execSync('pm2 restart natoh-ui natoh-api', { encoding: 'utf8', timeout: 15000 });
+            pm2Out = execSync('pm2 restart natoh-ui', { encoding: 'utf8', timeout: 15000 });
         } catch(pErr) {
             pm2Out = pErr.stdout || pErr.stderr || pErr.message;
         }
@@ -150,6 +153,9 @@ app.post('/api/admin/build-ui', (req, res) => {
             buildOut,
             pm2Out
         });
+        setTimeout(() => {
+            process.exit(0);
+        }, 600);
     } catch (err) {
         res.status(500).json({
             error: err.message,

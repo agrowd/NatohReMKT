@@ -10,9 +10,56 @@ let lastQr = null;
 let lastPairingCode = null;
 let isSyncing = false;
 
+const cleanChromiumLocks = () => {
+    try {
+        const sessionDir = path.join(__dirname, 'sessions');
+        const sDir = path.join(sessionDir, 'session');
+        const lockFiles = ['SingletonLock', 'SingletonCookie', 'SingletonSocket', 'DevToolsActivePort'];
+        for (const file of lockFiles) {
+            const fPath = path.join(sDir, file);
+            if (fs.existsSync(fPath)) {
+                try { fs.unlinkSync(fPath); } catch (e) {}
+            }
+        }
+    } catch (e) {}
+};
+
+const terminateClient = async () => {
+    if (client) {
+        try {
+            client.removeAllListeners();
+            const browser = client.pupBrowser;
+            const proc = browser ? browser.process() : null;
+            if (browser) {
+                try {
+                    await Promise.race([
+                        client.destroy().catch(() => {}),
+                        new Promise(r => setTimeout(r, 2000))
+                    ]);
+                } catch (e) {}
+            }
+            if (proc && !proc.killed) {
+                try { proc.kill('SIGKILL'); } catch (e) {}
+            }
+        } catch (e) {}
+        client = null;
+    }
+
+    if (process.platform === 'linux') {
+        try {
+            const { execSync } = require('child_process');
+            execSync('pkill -9 -f "sessions/session" || true');
+        } catch (e) {}
+    }
+
+    cleanChromiumLocks();
+    await new Promise(r => setTimeout(r, 600));
+};
+
 const initWhatsApp = async (socketIo) => {
     io = socketIo;
     console.log('--- WHATSAPP MODULE READY ---');
+    await terminateClient();
     const sessionDir = path.join(__dirname, 'sessions');
     if (fs.existsSync(sessionDir)) {
         console.log('--- RESTAURANDO SESIÓN PREVIA AUTOMÁTICAMENTE ---');
@@ -32,20 +79,7 @@ const getStatus = () => ({
 });
 
 const startClient = async (pairingPhoneNumber = null) => {
-    // Si ya existe un cliente y queremos cambiar de modo o de número, destruimos la instancia previa limpiando listeners
-    if (client) {
-        try {
-            client.removeAllListeners();
-            if (client.pupBrowser) {
-                await Promise.race([
-                    client.destroy(),
-                    new Promise(r => setTimeout(r, 4000))
-                ]);
-            }
-        } catch (e) {}
-        client = null;
-        await new Promise(r => setTimeout(r, 500));
-    }
+    await terminateClient();
 
     currentStatus = pairingPhoneNumber ? 'GENERANDO CÓDIGO' : 'INICIANDO';
     lastQr = null;
@@ -55,14 +89,7 @@ const startClient = async (pairingPhoneNumber = null) => {
     console.log(`--- STARTING WHATSAPP CLIENT (Mode: ${pairingPhoneNumber ? 'Pairing Code (' + pairingPhoneNumber + ')' : 'QR Code'}) ---`);
 
     const sessionDir = path.join(__dirname, 'sessions');
-
-    // Limpieza preventiva de SingletonLock huérfano de Chromium para evitar bloqueos tras reinicios de PM2
-    try {
-        const lockFile = path.join(sessionDir, 'session', 'SingletonLock');
-        if (fs.existsSync(lockFile)) {
-            fs.unlinkSync(lockFile);
-        }
-    } catch (e) {}
+    cleanChromiumLocks();
 
     const clientOptions = {
         authStrategy: new LocalAuth({ dataPath: sessionDir }),
@@ -182,14 +209,11 @@ const startClient = async (pairingPhoneNumber = null) => {
 };
 
 const stopClient = async () => {
-    if (client) {
-        try { await client.destroy(); } catch (e) {}
-        client = null;
-        currentStatus = 'DESCONECTADO';
-        lastQr = null;
-        lastPairingCode = null;
-        if (io) io.emit('status', currentStatus);
-    }
+    await terminateClient();
+    currentStatus = 'DESCONECTADO';
+    lastQr = null;
+    lastPairingCode = null;
+    if (io) io.emit('status', currentStatus);
 };
 
 const logout = async () => {
@@ -763,23 +787,12 @@ const requestPairingCode = async (phoneNumber) => {
 
 const cancelPairingCode = async () => {
     lastPairingCode = null;
-    if (client && client.pupPage) {
-        try {
-            await client.pupPage.evaluate(() => {
-                if (window.codeInterval) {
-                    clearInterval(window.codeInterval);
-                    window.codeInterval = undefined;
-                }
-                if (typeof window.AuthStore !== 'undefined' && window.AuthStore.PairingCodeLinkUtils) {
-                    try {
-                        window.AuthStore.PairingCodeLinkUtils.setPairingType('QR');
-                    } catch (e) {}
-                }
-            });
-        } catch (e) {
-            console.error('Error al cancelar código:', e.message);
-        }
+    currentStatus = 'DESCONECTADO';
+    if (io) {
+        io.emit('pairing_code', null);
+        io.emit('status', currentStatus);
     }
+    await terminateClient();
     return { success: true };
 };
 

@@ -68,6 +68,18 @@
 **Root Cause:** En `server/whatsapp.js`, `startClient` poseía la guarda `if (pairingPhoneNumber && lastPairingCode && currentStatus === 'CÓDIGO GENERADO') return;`. Al estar el estado en `'CÓDIGO GENERADO'` y existir `lastPairingCode`, `startClient` retornaba inmediatamente sin hacer nada, y `requestPairingCode` devolvía la variable `lastPairingCode` vieja en memoria sin solicitar nunca un nuevo código a WhatsApp Web.
 **Solución:**
 1. Eliminación de la guarda bloqueante en `startClient`.
-2. Re-generación en caliente en `requestPairingCode`: Si la página de Chromium ya está activa, se resetea `lastPairingCode = null` y se invoca directamente `await client.requestPairingCode(cleanNumber)`, lo que genera un código nuevo en WhatsApp Web en 1-2 segundos sin reiniciar Chromium.
-3. Feedback reactivo en `client/src/App.jsx`: Muestra un spinner animado *"GENERANDO NUEVO CÓDIGO..."* en el recuadro de dígitos mientras se espera la respuesta, garantizando que el usuario y el frontend vean la renovación inmediata.
+2. Limpieza forzada de procesos huérfanos de Chromium y cerrojos (`SingletonLock`, `SingletonCookie`, `SingletonSocket`, `DevToolsActivePort`) mediante `terminateClient` y `cleanChromiumLocks`.
+3. Feedback reactivo en `client/src/App.jsx`: Muestra un spinner animado *"GENERANDO NUEVO CÓDIGO..."* en el recuadro de dígitos mientras se espera la respuesta, garantizando que el usuario y el frontend vean la renovación inmediata sin volver bruscamente al formulario inicial.
+**Estado:** ✅ FIXED
+
+## ERR-09: Congelamiento de Inicialización y Caída por Unhandled Rejection (2026-10-29)
+**Síntoma:** Al solicitar regeneración de código de vinculación o reiniciar el servidor, la API quedaba congelada en `GENERANDO CÓDIGO` o caía con `ECONNRESET`.
+**Root Cause:**
+1. Al reiniciar la instancia de Puppeteer, `client.destroy()` a menudo se bloqueaba por operaciones CDP colgadas. El timeout abandonaba la promesa sin enviar `SIGKILL`, dejando procesos huérfanos de Chromium que retenían los archivos de bloqueo en `sessions/session/`. Las nuevas instancias quedaban colgadas intentando bloquear el directorio.
+2. Errores internos de WhatsApp Web (como el rechazo minificado `t` al solicitar vincularse cuando WhatsApp limita las solicitudes) provocaban un Unhandled Promise Rejection en Node 18, cerrando abruptamente la API.
+3. El endpoint de despliegue ejecutaba `execSync('pm2 restart natoh-api')` dentro de su propio proceso, causando que PM2 mate el proceso y aborte la respuesta HTTP.
+**Solución:**
+1. Implementación de `terminateClient()` con timeout estricto, `proc.kill('SIGKILL')`, `pkill -9 -f "sessions/session"` en Linux y borrado físico de cerrojos `SingletonLock`.
+2. Handlers globales `process.on('unhandledRejection')` y `process.on('uncaughtException')` en `server/index.js` para evitar caídas de Node por excepciones asíncronas de terceros.
+3. Desacople del reinicio en `/api/admin/restart-api` y `/api/admin/build-ui` mediante `process.exit(0)` diferido tras responder al cliente HTTP.
 **Estado:** ✅ FIXED
