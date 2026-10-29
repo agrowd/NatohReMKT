@@ -806,72 +806,11 @@ const diagnoseLabels = async () => {
         return { error: 'Client not online' };
     }
     try {
-        const pageTarget = client.pupBrowser.targets().find(t => t.type() === 'page');
-        if (!pageTarget) return { error: 'No page target found' };
-        
-        const cdp = await pageTarget.createCDPSession();
-        const evalRes = await cdp.send('Runtime.evaluate', {
-            expression: `(() => {
-                try {
-                    let collections = {};
-                    try { collections = window.require('WAWebCollections') || {}; } catch (e) {}
-                    const store = window.Store || {};
-                    
-                    const chatModels = collections.Chat ? collections.Chat.getModelsArray() : (store.Chat ? store.Chat.getModelsArray() : []);
-                    const labelModels = collections.Label ? collections.Label.getModelsArray() : (store.Label ? store.Label.getModelsArray() : []);
-                    
-                    const labels = labelModels.map(l => ({
-                        id: String(l.id),
-                        name: String(l.name || ''),
-                        hexColor: String(l.hexColor || ''),
-                        itemCount: l.labelItemCollection ? Number(l.labelItemCollection.length) : 0,
-                        parentIds: l.labelItemCollection ? l.labelItemCollection.getModelsArray().map(i => String(i.parentId || '')) : []
-                    }));
-
-                    const sampleChat = chatModels[0] || {};
-                    const matchedKeys = Object.keys(sampleChat).filter(k => /fav|star|pin|label|filter|rank/i.test(k));
-
-                    const foundChats = [];
-                    for (const c of chatModels) {
-                        const id = c.id ? String(c.id._serialized || c.id) : 'unknown';
-                        const name = String(c.name || c.formattedTitle || c.pushname || '');
-                        const chatLabels = Array.isArray(c.labels) ? c.labels.map(String) : [];
-                        
-                        let hasMatch = chatLabels.length > 0;
-                        const props = {};
-                        for (const k of matchedKeys) {
-                            const val = c[k];
-                            if (val !== undefined && val !== null && val !== false && val !== 0 && !(Array.isArray(val) && val.length === 0)) {
-                                hasMatch = true;
-                                props[k] = typeof val === 'object' ? JSON.stringify(val) : val;
-                            }
-                        }
-
-                        if (hasMatch) {
-                            foundChats.push({ id, name, labels: chatLabels, props });
-                        }
-                    }
-
-                    const collectionNames = Object.keys(collections);
-                    const matchedCollections = collectionNames.filter(k => /fav|filter|list|label/i.test(k));
-
-                    return {
-                        totalChats: chatModels.length,
-                        labels,
-                        matchedKeys,
-                        foundChatsCount: foundChats.length,
-                        foundChats: foundChats.slice(0, 40),
-                        matchedCollections
-                    };
-                } catch (err) {
-                    return { error: err.message, stack: err.stack };
-                }
-            })()`,
-            returnByValue: true
-        });
-
-        await cdp.detach();
-        return evalRes.result ? evalRes.result.value : evalRes;
+        const labels = await client.getLabels();
+        return {
+            success: true,
+            labels: labels.map(l => ({ id: l.id, name: l.name, hexColor: l.hexColor }))
+        };
     } catch (e) {
         return { error: e.message, stack: e.stack };
     }
