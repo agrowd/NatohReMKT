@@ -77,7 +77,7 @@ const initWhatsApp = async (socketIo) => {
     }
 };
 
-// Parche automático en runtime para Puppeteer 24 Frame Swap Timeout bug
+// Parche automático en runtime para Puppeteer 24 Frame Swap Timeout & Detached Frame bugs
 try {
     const fmPath = path.join(__dirname, 'node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/FrameManager.js');
     if (fs.existsSync(fmPath)) {
@@ -86,6 +86,15 @@ try {
             content = content.replace('TIME_FOR_WAITING_FOR_SWAP = 100;', 'TIME_FOR_WAITING_FOR_SWAP = 10000;');
             fs.writeFileSync(fmPath, content);
             console.log('[PUPPETEER PATCH] TIME_FOR_WAITING_FOR_SWAP ampliado a 10000ms');
+        }
+    }
+    const decPath = path.join(__dirname, 'node_modules/puppeteer-core/lib/cjs/puppeteer/util/decorators.js');
+    if (fs.existsSync(decPath)) {
+        let decContent = fs.readFileSync(decPath, 'utf8');
+        if (decContent.includes('if (this.disposed) {')) {
+            decContent = decContent.replace('if (this.disposed) {', 'if (this.disposed && this.constructor.name !== "CdpFrame") {');
+            fs.writeFileSync(decPath, decContent);
+            console.log('[PUPPETEER PATCH] CdpFrame disposed check disabled');
         }
     }
 } catch (e) {
