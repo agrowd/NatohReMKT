@@ -824,41 +824,76 @@ const diagnoseLabels = async () => {
         const diag = await client.pupPage.evaluate(() => {
             const collections = window.require('WAWebCollections') || {};
             const store = window.Store || {};
+            
             const chatModels = collections.Chat ? collections.Chat.getModelsArray() : [];
             const labelModels = collections.Label ? collections.Label.getModelsArray() : [];
 
-            // Find all chats with ANY favorite-like property or label
-            const matchedChats = [];
+            // 1. Check all collections for names matching fav, list, filter
+            const collectionKeys = Object.keys(collections);
+            const favCollections = collectionKeys.filter(k => /fav|filter|list/i.test(k));
+
+            // 2. Sample first chat keys to see all available property names
+            const sampleChat = chatModels[0] || {};
+            const allChatKeys = Object.keys(sampleChat);
+            const interestingKeys = allChatKeys.filter(k => /fav|star|pin|label|list|filter|rank/i.test(k));
+
+            // 3. Scan chats for any interesting properties or labels without any heavy serialization
+            const candidates = [];
             for (const c of chatModels) {
-                const keys = Object.keys(c);
-                const favKeys = keys.filter(k => /fav/i.test(k));
-                const favProps = {};
-                for (const k of favKeys) {
-                    if (c[k]) favProps[k] = typeof c[k] === 'object' ? JSON.stringify(c[k]) : c[k];
+                const id = c.id ? (c.id._serialized || String(c.id)) : 'unknown';
+                const name = String(c.name || c.formattedTitle || '');
+                const labels = Array.isArray(c.labels) ? c.labels : [];
+                
+                const props = {};
+                for (const k of interestingKeys) {
+                    const val = c[k];
+                    if (val !== undefined && val !== null && val !== false && val !== 0 && !(Array.isArray(val) && val.length === 0)) {
+                        props[k] = (typeof val === 'object' && val !== null) ? (val._serialized || (Array.isArray(val) ? val.length : 'object')) : val;
+                    }
                 }
-                const hasFav = Object.keys(favProps).length > 0;
-                const hasLabels = Array.isArray(c.labels) && c.labels.length > 0;
-                if (hasFav || hasLabels) {
-                    matchedChats.push({
-                        id: c.id ? c.id._serialized : 'unknown',
-                        name: c.name || c.formattedTitle || '',
-                        labels: c.labels || [],
-                        favProps
+
+                if (labels.length > 0 || Object.keys(props).length > 0) {
+                    candidates.push({
+                        id,
+                        name,
+                        labels,
+                        props
                     });
+                }
+            }
+
+            // 4. Check if any favCollection has models
+            const favCollectionsData = {};
+            for (const fk of favCollections) {
+                try {
+                    const col = collections[fk];
+                    if (col && typeof col.getModelsArray === 'function') {
+                        const models = col.getModelsArray();
+                        favCollectionsData[fk] = {
+                            count: models.length,
+                            sample: models.slice(0, 5).map(m => {
+                                const out = {};
+                                for (const k of Object.keys(m).slice(0, 10)) {
+                                    const v = m[k];
+                                    out[k] = (typeof v === 'object' && v !== null) ? (v._serialized || 'object') : v;
+                                }
+                                return out;
+                            })
+                        };
+                    }
+                } catch (e) {
+                    favCollectionsData[fk] = { error: e.message };
                 }
             }
 
             return {
                 totalChats: chatModels.length,
-                labels: labelModels.map(l => ({
-                    id: String(l.id),
-                    name: String(l.name),
-                    itemCount: l.labelItemCollection ? l.labelItemCollection.length : 0,
-                    parentIds: l.labelItemCollection ? l.labelItemCollection.getModelsArray().map(i => i.parentId) : []
-                })),
-                matchedChatsCount: matchedChats.length,
-                matchedChats: matchedChats.slice(0, 30),
-                collectionsKeys: Object.keys(collections).filter(k => /fav|filter|list|label/i.test(k))
+                labels: labelModels.map(l => ({ id: String(l.id), name: String(l.name) })),
+                favCollections,
+                favCollectionsData,
+                interestingKeys,
+                candidatesCount: candidates.length,
+                candidates: candidates.slice(0, 50)
             };
         });
         return diag;
