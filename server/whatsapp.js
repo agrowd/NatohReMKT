@@ -780,6 +780,93 @@ const syncLabelsAndMembers = async () => {
     }
 };
 
+const diagnoseLabels = async () => {
+    if (!client || !client.pupPage || currentStatus !== 'BOT ONLINE') {
+        return { error: 'Client not online' };
+    }
+    return await client.pupPage.evaluate(() => {
+        let collections = {};
+        try { collections = window.require('WAWebCollections') || {}; } catch (e) {}
+        const store = window.Store || {};
+        
+        const chatModels = collections.Chat ? collections.Chat.getModelsArray() : (store.Chat ? store.Chat.getModelsArray() : []);
+        const labelModels = collections.Label ? collections.Label.getModelsArray() : (store.Label ? store.Label.getModelsArray() : []);
+        
+        // Check labels and their items
+        const labels = labelModels.map(l => ({
+            id: l.id,
+            name: l.name,
+            hexColor: l.hexColor,
+            itemCount: l.labelItemCollection ? l.labelItemCollection.length : 0,
+            items: l.labelItemCollection ? l.labelItemCollection.getModelsArray().map(i => ({
+                id: i.id,
+                parentId: i.parentId,
+                parentType: i.parentType
+            })) : []
+        }));
+
+        // Scan all properties across all chats to find any property with 'fav', 'star', 'pin', 'label', 'filter'
+        const sampleChat = chatModels[0] || {};
+        const allChatKeys = Object.keys(sampleChat);
+        const interestingKeys = allChatKeys.filter(k => 
+            /fav|star|pin|label|filter/i.test(k)
+        );
+
+        // Find chats that have any interesting property truthy or non-empty
+        const interestingChats = chatModels.filter(c => {
+            for (const k of interestingKeys) {
+                const val = c[k];
+                if (val !== undefined && val !== null && val !== false && val !== 0 && !(Array.isArray(val) && val.length === 0)) {
+                    return true;
+                }
+            }
+            return false;
+        }).map(c => {
+            const res = {
+                id: c.id ? c.id._serialized : 'unknown',
+                name: c.name || c.formattedTitle || ''
+            };
+            for (const k of interestingKeys) {
+                res[k] = c[k];
+            }
+            return res;
+        });
+
+        // Store keys and collection keys
+        const storeKeys = Object.keys(store).filter(k => /fav|filter|list|label/i.test(k));
+        const collectionKeys = Object.keys(collections).filter(k => /fav|filter|list|label/i.test(k));
+
+        // Inspect any favorite-related collection in Store or Collections
+        let favoriteCollectionDump = null;
+        for (const colKey of [...storeKeys, ...collectionKeys]) {
+            if (/fav/i.test(colKey)) {
+                const col = store[colKey] || collections[colKey];
+                if (col && typeof col.getModelsArray === 'function') {
+                    favoriteCollectionDump = {
+                        key: colKey,
+                        models: col.getModelsArray().map(m => {
+                            const keys = Object.keys(m);
+                            const obj = {};
+                            for (const k of keys.slice(0, 15)) obj[k] = m[k];
+                            return obj;
+                        })
+                    };
+                }
+            }
+        }
+
+        return {
+            totalChats: chatModels.length,
+            labels,
+            interestingKeys,
+            interestingChats,
+            storeKeys,
+            collectionKeys,
+            favoriteCollectionDump
+        };
+    });
+};
+
 const sanitizePairingNumber = (raw) => {
     if (!raw) return '';
     let digits = raw.replace(/\D/g, '');
@@ -941,6 +1028,7 @@ module.exports = {
     bulkTagChats,
     getActiveSearch,
     syncLabelsAndMembers,
+    diagnoseLabels,
     requestPairingCode,
     cancelPairingCode,
     sanitizePairingNumber

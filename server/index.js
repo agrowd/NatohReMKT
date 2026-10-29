@@ -5,7 +5,7 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const db = require('./database');
-const { initWhatsApp, startClient, stopClient, restartClient, logout, getLabels, getContactsByLabel, syncAllContacts, deepSyncLabels, tagContactsByQuery, sendMessage, getStatus, searchMessagesInHistory, cancelSearch, bulkTagChats, getActiveSearch, syncLabelsAndMembers, requestPairingCode, cancelPairingCode } = require('./whatsapp');
+const { initWhatsApp, startClient, stopClient, restartClient, logout, getLabels, getContactsByLabel, syncAllContacts, deepSyncLabels, tagContactsByQuery, sendMessage, getStatus, searchMessagesInHistory, cancelSearch, bulkTagChats, getActiveSearch, syncLabelsAndMembers, diagnoseLabels, requestPairingCode, cancelPairingCode } = require('./whatsapp');
 
 
 
@@ -729,6 +729,15 @@ app.get('/api/labels', async (req, res) => {
         
         res.json(labelsWithStats); 
     } catch (err) { res.json([]); }
+});
+
+app.get('/api/admin/diagnose-labels', async (req, res) => {
+    try {
+        const diag = await diagnoseLabels();
+        res.json(diag);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 // --- Contacts & Smart Tagging ---
