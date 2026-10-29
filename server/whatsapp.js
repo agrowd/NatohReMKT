@@ -36,9 +36,15 @@ const startClient = async (pairingPhoneNumber = null) => {
     if (client) {
         try {
             client.removeAllListeners();
-            await client.destroy();
+            if (client.pupBrowser) {
+                await Promise.race([
+                    client.destroy(),
+                    new Promise(r => setTimeout(r, 4000))
+                ]);
+            }
         } catch (e) {}
         client = null;
+        await new Promise(r => setTimeout(r, 500));
     }
 
     currentStatus = pairingPhoneNumber ? 'GENERANDO CÓDIGO' : 'INICIANDO';
@@ -732,31 +738,11 @@ const requestPairingCode = async (phoneNumber) => {
         io.emit('pairing_code', null);
     }
 
-    // 1. Si el cliente y su página de Chromium ya están activos y listos para vincular
-    if (client && client.pupPage) {
-        try {
-            console.log('[PAIRING] Solicitando nuevo código directamente a WhatsApp Web en caliente...');
-            const code = await client.requestPairingCode(cleanNumber);
-            if (code) {
-                lastPairingCode = code;
-                currentStatus = 'CÓDIGO GENERADO';
-                if (io) {
-                    io.emit('pairing_code', code);
-                    io.emit('status', currentStatus);
-                }
-                console.log('--- NUEVO PAIRING CODE GENERADO EN CALIENTE:', code, '---');
-                return { success: true, code, phoneNumber: cleanNumber };
-            }
-        } catch (hotErr) {
-            console.warn('[PAIRING] Solicitud en caliente falló, reiniciando instancia de cliente:', hotErr.message);
-        }
-    }
-
-    // 2. Si no hay cliente activo o falló la solicitud en caliente, arrancamos una instancia fresca
+    // Iniciar o reiniciar el cliente en modo código de vinculación telefónica
     await startClient(cleanNumber);
 
     // Esperar a que whatsapp-web.js emita el evento nativo 'code'
-    const maxWaitMs = 35000;
+    const maxWaitMs = 45000;
     const startTime = Date.now();
 
     while (!lastPairingCode && currentStatus !== 'BOT ONLINE' && currentStatus !== 'DESCONECTADO' && Date.now() - startTime < maxWaitMs) {
@@ -764,6 +750,7 @@ const requestPairingCode = async (phoneNumber) => {
     }
 
     if (lastPairingCode) {
+        console.log(`[PAIRING] Nuevo código obtenido con éxito: ${lastPairingCode}`);
         return { success: true, code: lastPairingCode, phoneNumber: cleanNumber };
     }
 
