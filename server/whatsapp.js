@@ -807,41 +807,44 @@ const diagnoseLabels = async () => {
     }
     try {
         const pages = await client.pupBrowser.pages();
-        const frameInfo = [];
-        let workingFrame = null;
-        for (let pi = 0; pi < pages.length; pi++) {
-            const p = pages[pi];
-            const frames = p.frames();
-            for (let fi = 0; fi < frames.length; fi++) {
-                const f = frames[fi];
-                const detached = typeof f.isDetached === 'function' ? f.isDetached() : false;
-                frameInfo.push({
-                    pageIndex: pi,
-                    frameIndex: fi,
-                    url: f.url(),
-                    name: f.name(),
-                    isDetached: detached
+        const page = client.pupPage || (pages.length > 0 ? pages[0] : null);
+        const mainFrame = page ? page.mainFrame() : null;
+        
+        let framesDetails = [];
+        if (page) {
+            framesDetails = page.frames().map(f => ({
+                id: f._id,
+                url: f.url(),
+                detached: f.detached
+            }));
+        }
+
+        let nonDetachedEval = null;
+        let evalError = null;
+        try {
+            const workingFrame = page.frames().find(f => !f.detached);
+            if (workingFrame) {
+                nonDetachedEval = await workingFrame.evaluate(() => {
+                    const collections = window.require('WAWebCollections') || {};
+                    return {
+                        success: true,
+                        labels: collections.Label ? collections.Label.getModelsArray().map(l => ({ id: l.id, name: l.name })) : [],
+                        chatsCount: collections.Chat ? collections.Chat.getModelsArray().length : 0
+                    };
                 });
-                if (!detached && !workingFrame && f.url().includes('whatsapp.com')) {
-                    workingFrame = f;
-                }
             }
+        } catch (ee) {
+            evalError = ee.message;
         }
 
-        let evalResult = null;
-        if (workingFrame) {
-            evalResult = await workingFrame.evaluate(() => {
-                const collections = window.require('WAWebCollections') || {};
-                const labels = collections.Label ? collections.Label.getModelsArray().map(l => ({ id: l.id, name: l.name })) : [];
-                return {
-                    success: true,
-                    labels,
-                    chatsCount: collections.Chat ? collections.Chat.getModelsArray().length : 0
-                };
-            });
-        }
-
-        return { pagesCount: pages.length, frameInfo, evalResult };
+        return {
+            pagesCount: pages.length,
+            pageUrl: page ? page.url() : null,
+            mainFrameDetached: mainFrame ? mainFrame.detached : null,
+            framesDetails,
+            nonDetachedEval,
+            evalError
+        };
     } catch (e) {
         return { error: e.message, stack: e.stack };
     }
