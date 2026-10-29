@@ -282,10 +282,15 @@ const startClient = async (pairingPhoneNumber = null, forceRestart = false) => {
                 io.emit('status', currentStatus);
             }
             
-            // Carga inicial de etiquetas
+            // Carga inicial y sincronización de etiquetas
             try {
-                const labels = await client.getLabels();
-                if (io) io.emit('labels', labels);
+                const labels = await syncLabelsAndMembers();
+                const stats = db.prepare('SELECT label_id, COUNT(*) as count FROM label_members GROUP BY label_id').all();
+                const labelsWithStats = (labels || []).map(l => {
+                    const stat = stats.find(s => s.label_id === l.id);
+                    return { ...l, memberCount: stat ? stat.count : 0 };
+                });
+                if (io) io.emit('labels', labelsWithStats);
             } catch (e) {
                 console.error('[READY GETLABELS ERROR]:', e.message);
             }
@@ -398,26 +403,122 @@ const getLabels = async () => {
     try { return await client.getLabels(); } catch (e) { return []; }
 };
 
+const getFavoriteChatsFromWhatsApp = async () => {
+    if (!client || currentStatus !== 'BOT ONLINE') return [];
+    try {
+        const evalCode = `(() => {
+            const collections = window.require('WAWebCollections') || {};
+            const favCol = collections.FavoriteCollection;
+            const favModels = favCol ? favCol.getModelsArray() : [];
+            const chatCol = collections.Chat;
+            const contactCol = collections.Contact;
+
+            const allChats = chatCol ? chatCol.getModelsArray() : [];
+            const allContacts = contactCol ? contactCol.getModelsArray() : [];
+
+            return favModels.map(f => {
+                const fid = f.id ? (f.id._serialized || f.id) : (f.__x_id ? (f.__x_id._serialized || f.__x_id) : String(f));
+                
+                let c = chatCol ? chatCol.get(fid) : null;
+                if (!c && chatCol) {
+                    c = allChats.find(chat => {
+                        const idStr = chat.id ? (chat.id._serialized || chat.id) : '';
+                        const lidStr = chat.lid ? (chat.lid._serialized || chat.lid) : (chat.__x_lid ? (chat.__x_lid._serialized || chat.__x_lid) : '');
+                        return idStr === fid || lidStr === fid;
+                    });
+                }
+
+                let ct = contactCol ? contactCol.get(fid) : null;
+                if (!ct && contactCol) {
+                    ct = allContacts.find(contact => {
+                        const idStr = contact.id ? (contact.id._serialized || contact.id) : '';
+                        const lidStr = contact.lid ? (contact.lid._serialized || contact.lid) : (contact.__x_lid ? (contact.__x_lid._serialized || contact.__x_lid) : '');
+                        return idStr === fid || lidStr === fid;
+                    });
+                }
+
+                const name = (c && (c.name || c.formattedTitle)) || (ct && (ct.name || ct.pushname)) || '';
+                const phoneObj = (ct && ct.phoneNumber) || (c && c.phoneNumber) || null;
+                const phoneNum = phoneObj ? (phoneObj.user || (phoneObj._serialized ? phoneObj._serialized.split('@')[0] : '')) : (fid.includes('@') ? fid.split('@')[0] : fid);
+
+                return {
+                    id: fid,
+                    name: name,
+                    number: phoneNum
+                };
+            });
+        })()`;
+
+        let favs = null;
+        if (client.pupBrowser) {
+            const pageTarget = client.pupBrowser.targets().find(t => t.type() === 'page' && t.url().includes('whatsapp.com'));
+            if (pageTarget) {
+                const session = typeof pageTarget._session === 'function' ? pageTarget._session() : null;
+                if (session) {
+                    const res = await session.send('Runtime.evaluate', {
+                        expression: evalCode,
+                        returnByValue: true,
+                        awaitPromise: true
+                    });
+                    if (res && res.result && res.result.value) {
+                        favs = res.result.value;
+                    }
+                }
+            }
+        }
+
+        if (!favs && client.pupPage && !client.pupPage.isClosed()) {
+            favs = await client.pupPage.evaluate(new Function(`return ${evalCode}`));
+        }
+
+        return favs || [];
+    } catch (e) {
+        console.error('[GET FAVORITES ERROR]:', e.message);
+        return [];
+    }
+};
+
 const getContactsByLabel = async (labelId) => {
     // Primero intentamos por base de datos local para tener TODO lo conocido
     const localMembers = db.prepare('SELECT contact_id FROM label_members WHERE label_id = ?').all(labelId);
     
-    // Si no hay nada local, o para asegurar, intentamos API
-    if (!client) return localMembers.map(m => ({ id: { _serialized: m.contact_id } }));
+    // Si no hay cliente o no está online, devolvemos la DB local
+    if (!client || currentStatus !== 'BOT ONLINE') {
+        return localMembers.map(m => ({ id: { _serialized: m.contact_id } }));
+    }
 
     try {
-        const label = await client.getLabelById(labelId);
-        const chats = await label.getChats();
+        let chats = [];
+        const isFavorite = (String(labelId) === '2');
+        if (isFavorite) {
+            const favChats = await getFavoriteChatsFromWhatsApp();
+            if (favChats && favChats.length > 0) {
+                chats = favChats.map(f => ({
+                    id: { _serialized: f.id, user: f.number },
+                    name: f.name
+                }));
+            }
+        } else {
+            const label = await client.getLabelById(labelId);
+            if (label) chats = await label.getChats();
+        }
         
         // Actualizamos nuestra DB con lo que la API ve ahora
-        for (const chat of chats) {
-            db.prepare('INSERT OR IGNORE INTO label_members (label_id, contact_id) VALUES (?, ?)').run(labelId, chat.id._serialized);
+        if (chats && chats.length > 0) {
+            for (const chat of chats) {
+                const chatId = chat.id ? (chat.id._serialized || chat.id) : null;
+                const chatNumber = chat.id && chat.id.user ? chat.id.user : (chatId ? chatId.split('@')[0] : '');
+                if (chatId) {
+                    db.prepare('INSERT OR IGNORE INTO contacts (id, name, number) VALUES (?, ?, ?)').run(chatId, chat.name || '', chatNumber);
+                    db.prepare('INSERT OR IGNORE INTO label_members (label_id, contact_id) VALUES (?, ?)').run(labelId, chatId);
+                }
+            }
         }
         
         // Devolvemos la unión de local + lo que ve la API ahora
         const combinedIds = new Set([
             ...localMembers.map(m => m.contact_id),
-            ...chats.map(c => c.id._serialized)
+            ...chats.map(c => (c.id ? (c.id._serialized || c.id) : c))
         ]);
         
         return Array.from(combinedIds).map(id => ({ id: { _serialized: id } }));
@@ -463,12 +564,24 @@ const deepSyncLabels = async () => {
 
         for (const label of labels) {
             console.log(`[DEEP SYNC] Procesando etiqueta: ${label.name}`);
-            const chats = await label.getChats();
+            const isFavorite = (String(label.id) === '2' || (label.name && label.name.toLowerCase().includes('favorit')));
+            let chats = [];
+            if (isFavorite) {
+                const favChats = await getFavoriteChatsFromWhatsApp();
+                chats = favChats.map(f => ({
+                    id: { _serialized: f.id, user: f.number },
+                    name: f.name
+                }));
+            } else {
+                chats = await label.getChats();
+            }
             for (const chat of chats) {
-                // Guardar relación
-                db.prepare('INSERT OR IGNORE INTO label_members (label_id, contact_id) VALUES (?, ?)').run(label.id, chat.id._serialized);
-                // También guardar contacto básico si no existe
-                db.prepare('INSERT OR IGNORE INTO contacts (id, name, number) VALUES (?, ?, ?)').run(chat.id._serialized, chat.name, chat.id.user);
+                const chatId = chat.id ? (chat.id._serialized || chat.id) : null;
+                const chatNumber = chat.id && chat.id.user ? chat.id.user : (chatId ? chatId.split('@')[0] : '');
+                if (chatId) {
+                    db.prepare('INSERT OR IGNORE INTO contacts (id, name, number) VALUES (?, ?, ?)').run(chatId, chat.name || '', chatNumber);
+                    db.prepare('INSERT OR IGNORE INTO label_members (label_id, contact_id) VALUES (?, ?)').run(label.id, chatId);
+                }
             }
             labelIndex++;
             if (io) io.emit('sync_status', { isSyncing: true, progress: Math.floor((labelIndex / labels.length) * 100), type: 'labels' });
@@ -540,6 +653,7 @@ const tagContactsByQuery = async (query, labelId, limit = 200) => {
 const normalizePhoneRecipient = (raw) => {
     if (!raw) return raw;
     let target = String(raw).trim();
+    if (target.endsWith('@lid') || target.endsWith('@g.us')) return target;
     let numOnly = target.includes('@') ? target.split('@')[0] : target;
     let digits = numOnly.replace(/\D/g, '');
     if (!digits) return target;
@@ -599,6 +713,26 @@ const normalizePhoneRecipient = (raw) => {
 
 const resolveTargetChatId = async (targetId) => {
     if (!client || currentStatus !== 'BOT ONLINE') throw new Error('Bot apagado o desconectado');
+    
+    // Si ya es un ID de chat nativo (@lid o @g.us), verificar directamente en WhatsApp Web
+    if (targetId.endsWith('@lid') || targetId.endsWith('@g.us')) {
+        try {
+            const chatExists = await client.pupPage.evaluate(async (id) => {
+                try {
+                    if (window.WWebJS && window.WWebJS.getChat) {
+                        const c = await window.WWebJS.getChat(id, { getAsModel: false });
+                        if (c) return true;
+                    }
+                    const wid = window.require('WAWebWidFactory').createWid(id);
+                    return Boolean(window.require('WAWebCollections').Chat.get(wid));
+                } catch (e) {
+                    return false;
+                }
+            }, targetId);
+            if (chatExists) return targetId;
+        } catch (e) {}
+    }
+
     const rawNumber = targetId.includes('@') ? targetId.split('@')[0] : targetId;
 
     const queryExists = async (num) => {
@@ -844,11 +978,23 @@ const syncLabelsAndMembers = async () => {
         for (const label of labels) {
             try {
                 let chats = [];
-                // Intentar obtener chats por método estándar de whatsapp-web.js
-                try {
-                    chats = await label.getChats();
-                } catch (ce) {
-                    console.warn(`[LABELS SYNC] label.getChats() falló para "${label.name}":`, ce.message);
+                const isFavorite = (String(label.id) === '2' || (label.name && label.name.toLowerCase().includes('favorit')));
+
+                if (isFavorite) {
+                    const favChats = await getFavoriteChatsFromWhatsApp();
+                    if (favChats && favChats.length > 0) {
+                        chats = favChats.map(f => ({
+                            id: { _serialized: f.id, user: f.number },
+                            name: f.name
+                        }));
+                    }
+                } else {
+                    // Intentar obtener chats por método estándar de whatsapp-web.js
+                    try {
+                        chats = await label.getChats();
+                    } catch (ce) {
+                        console.warn(`[LABELS SYNC] label.getChats() falló para "${label.name}":`, ce.message);
+                    }
                 }
                 console.log(`[LABELS SYNC] Leídos ${chats ? chats.length : 0} chats para etiqueta "${label.name}".`);
                 
@@ -1208,6 +1354,7 @@ module.exports = {
     bulkTagChats,
     getActiveSearch,
     syncLabelsAndMembers,
+    getFavoriteChatsFromWhatsApp,
     diagnoseLabels,
     requestPairingCode,
     cancelPairingCode,
