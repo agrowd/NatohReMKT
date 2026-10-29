@@ -487,3 +487,29 @@ El usuario reporta: "Selecciono la lista virtual de luz o hifu, me da como resul
 3. **Despliegue y Verificación:**
    - Desplegado en VPS en producción.
    - Verificado `/api/whatsapp/status` activo en estado `'ESPERANDO ESCANEO'` con código QR generado y listo.
+
+---
+
+## Sesión: Detención Inmediata, Invalidación de Instancias y Feedback de Acciones (2026-10-29)
+
+### Consulta del Usuario
+"Presiono detener y sigue corriendo el bot, no dice nada, mejora el front y el back en cuanto a eso asi no se generan codigos que no van y se buguea" (Adjunta captura mostrando estado LISTO PARA VINCULAR tras tocar Detener).
+
+### Causa Raíz
+1. Al pulsar "Detener", la interfaz disparaba la llamada HTTP al backend pero no actualizaba el estado reactivo local de React inmediatamente ni mostraba feedback explícito ("no dice nada").
+2. Durante el proceso de apagado de Puppeteer, llamadas en vuelo o eventos de `qr` y `code` generados por la instancia previa llegaban al event loop y sobreescribían `currentStatus = 'ESPERANDO ESCANEO'`, reviviendo el bot en la UI.
+3. El bucle de espera de código telefónico (`requestPairingCode`) continuaba activo en segundo plano esperando hasta 40 segundos sin enterarse de que el usuario había ordenado detener el bot, generando códigos fantasma o bloqueando solicitudes posteriores.
+
+### Solución Implementada
+1. **Invalidación Generacional por `currentInstanceId` (`server/whatsapp.js`):**
+   - Cada arranque incrementa `currentInstanceId`.
+   - Todos los manejadores de eventos (`qr`, `code`, `authenticated`, `ready`, etc.) descartan eventos si `instanceId !== currentInstanceId`, `isStoppingClient === true` o `currentStatus === 'DESCONECTADO'`.
+   - `stopClient()` incrementa el ID de instancia, aborta al instante el loop de generación de código telefónico y responde con `{ success: true, status: 'DESCONECTADO' }`.
+2. **Feedback Reactivo Inmediato (`client/src/App.jsx`):**
+   - Al tocar "Detener", el botón muestra `[⏳ Deteniendo...]` y al completarse actualiza instantáneamente el estado local a `'DESCONECTADO'`, limpia códigos y QR.
+   - Muestra banner y píldora de notificación: **"⏹️ El bot fue detenido correctamente y el navegador está apagado."**
+   - Botón directo `[⏹️ Detener]` incorporado en la barra superior (Top Bar) para acceso inmediato sin abrir el modal.
+   - Heartbeat de sincronización periódica de respaldo cada 4s para mantener siempre el cliente alineado con el VPS.
+3. **Despliegue y Verificación:**
+   - Desplegado en VPS (`natoh-ui` y `natoh-api`).
+   - Verificado `POST /api/whatsapp/stop` en vivo: detiene y deja el backend en `'DESCONECTADO'` sin revivir.
