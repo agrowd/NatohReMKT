@@ -83,3 +83,15 @@
 2. Handlers globales `process.on('unhandledRejection')` y `process.on('uncaughtException')` en `server/index.js` para evitar caídas de Node por excepciones asíncronas de terceros.
 3. Desacople del reinicio en `/api/admin/restart-api` y `/api/admin/build-ui` mediante `process.exit(0)` diferido tras responder al cliente HTTP.
 **Estado:** ✅ FIXED
+
+## ERR-10: Colisión Concurrente de Instancias de Chromium ("Attempted to use detached Frame") (2026-10-29)
+**Síntoma:** Al intentar generar código repetidamente ("intente varias veces"), la interfaz arrojaba el error: "No se pudo obtener el código a tiempo. Si WhatsApp limitó los intentos...". En los logs de PM2 se evidenciaban errores: `Init Error: Error: Attempted to use detached Frame` y `Init Error: Error: Navigating frame was detached`.
+**Root Cause:**
+1. No existía mutex de concurrencia en `requestPairingCode` ni en `startClient`. Si el usuario hacía múltiples clics antes de que WhatsApp Web cargara (~10-15s), cada nuevo clic ejecutaba `terminateClient()`, matando el proceso de Chromium que la petición anterior estaba esperando en pleno `page.goto()`.
+2. Al destruirse el navegador en cada intento, se invalidaba cualquier código previo de 8 dígitos recién generado, haciendo que en el celular apareciera "No se pudo vincular" y saturando a WhatsApp con solicitudes hasta que aplicaba rate limit (`t`).
+**Solución:**
+1. Implementación de mutex concurrente Single-Flight (`activePairingPromise`): todas las llamadas simultáneas comparten la misma promesa de arranque sin matar procesos en vuelo.
+2. Reutilización de código activo vigente (`CODE_LIFETIME_MS = 140s`): si ya hay un código válido emitido y el cliente Chromium sigue en espera, se retorna inmediatamente sin reiniciar.
+3. Bloqueo de doble clic en frontend (`disabled={isRequestingPairing}` + guarda `if (isRequestingPairing) return;`).
+4. Botón de rescate directo en la alerta de rate limit: permite con 1 clic pasar a la pestaña QR y generar el código QR instantáneamente sin esperas.
+**Estado:** ✅ FIXED

@@ -21,6 +21,10 @@
      - Condición `(pairingCode || isRequestingPairing)` para evitar que la UI salte al formulario inicial durante la generación.
      - Contenedor de dígitos con spinner animado *"GENERANDO NUEVO CÓDIGO..."* mientras se procesa la solicitud.
      - Manejo de errores visuales en rojo y botón "Cambiar número" que cancela y limpia el estado.
+  5. **Protección Concurrente Single-Flight y Preservación de Código Activo:**
+     - Mutex `activePairingPromise` y flag `isStartingClient` que impiden que clics múltiples aborten el proceso de Chromium en vuelo con `Navigating frame was detached`.
+     - Reutilización de código activo vigente por 140s sin reiniciar el navegador para que el usuario pueda digitarlo en su teléfono sin perder la sesión.
+     - Botón de rescate directo en la alerta para cambiar inmediatamente a escaneo QR si WhatsApp aplicó rate limit temporal a la línea.
 - **Resultado de Verificación:**
   - Desplegado y compilado en VPS en tiempo récord (198ms build UI).
   - Verificado extremo a extremo con número de prueba (`5491122334455` -> código `T83J6A64`).

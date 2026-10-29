@@ -314,8 +314,9 @@ function App() {
     };
 }, [user]);
 
-  const handleRequestPairingCode = async (e) => {
+  const handleRequestPairingCode = async (e, forceNew = false) => {
     if (e) e.preventDefault();
+    if (isRequestingPairing) return;
     if (!phoneToPair.trim()) {
       setPairingError('Por favor ingresá tu número de WhatsApp.');
       return;
@@ -323,7 +324,10 @@ function App() {
     setIsRequestingPairing(true);
     setPairingError('');
     try {
-      const res = await axios.post(`${API_URL}/api/whatsapp/pair-phone`, { phoneNumber: phoneToPair });
+      const res = await axios.post(`${API_URL}/api/whatsapp/pair-phone`, { 
+        phoneNumber: phoneToPair,
+        forceNew 
+      });
       if (res.data && res.data.code) {
         setPairingCode(res.data.code);
       }
@@ -368,7 +372,12 @@ function App() {
           <button 
             type="button"
             className={`connect-mode-btn ${connectTab === 'qr' ? 'active' : ''}`}
-            onClick={() => setConnectTab('qr')}
+            onClick={() => {
+              setConnectTab('qr');
+              if (!qr && status !== 'BOT ONLINE') {
+                axios.post(`${API_URL}/api/whatsapp/start`).catch(() => {});
+              }
+            }}
           >
             <Icon name="qr" size={16} /> Escanear QR
           </button>
@@ -486,7 +495,7 @@ function App() {
                   type="button"
                   className="btn btn-primary" 
                   style={{ flex: 1, fontSize: '0.8rem' }}
-                  onClick={handleRequestPairingCode}
+                  onClick={() => handleRequestPairingCode(null, true)}
                   disabled={isRequestingPairing}
                 >
                   {isRequestingPairing ? (
@@ -520,6 +529,7 @@ function App() {
                   placeholder="Ej: 11 2345 6789 o 5491123456789"
                   value={phoneToPair}
                   onChange={e => setPhoneToPair(e.target.value)}
+                  disabled={isRequestingPairing}
                   style={{ width: '100%', fontSize: '1rem', padding: '0.75rem 1rem', letterSpacing: '0.5px' }}
                 />
                 <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)', display: 'block', marginTop: '5px' }}>
@@ -528,17 +538,21 @@ function App() {
               </div>
 
               {pairingError && (
-                <div style={{ background: 'rgba(255,68,68,0.1)', color: '#ff6666', padding: '10px 14px', borderRadius: '8px', fontSize: '0.82rem', marginBottom: '1rem', border: '1px solid rgba(255,68,68,0.2)', lineHeight: 1.4 }}>
-                  <div>⚠️ {pairingError}</div>
-                  {pairingError.includes('límite') && (
+                <div style={{ background: 'rgba(255, 183, 77, 0.12)', color: '#ffb74d', padding: '12px 14px', borderRadius: '10px', fontSize: '0.82rem', marginBottom: '1rem', border: '1px solid rgba(255, 183, 77, 0.3)', lineHeight: 1.4 }}>
+                  <div style={{ fontWeight: 600 }}>⚠️ {pairingError}</div>
+                  <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255, 183, 77, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                    <span style={{ fontSize: '0.76rem', color: '#fff', opacity: 0.85 }}>¿No querés esperar? Podés escanear el QR:</span>
                     <button 
                       type="button" 
-                      onClick={() => setConnectTab('qr')}
-                      style={{ marginTop: '8px', background: 'rgba(255,255,255,0.08)', border: '1px solid var(--primary)', color: 'var(--primary)', borderRadius: '6px', padding: '4px 10px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                      onClick={() => {
+                        setConnectTab('qr');
+                        axios.post(`${API_URL}/api/whatsapp/start`).catch(() => {});
+                      }}
+                      style={{ background: 'var(--primary)', border: 'none', color: '#000', borderRadius: '6px', padding: '5px 12px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '5px' }}
                     >
-                      <Icon name="qr" size={14} /> Vincular ahora con Código QR
+                      <Icon name="qr" size={14} /> Vincular con QR ahora
                     </button>
-                  )}
+                  </div>
                 </div>
               )}
 
@@ -550,7 +564,7 @@ function App() {
               >
                 {isRequestingPairing ? (
                   <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                    <Icon name="refresh" size={16} className="spin-animation" /> GENERANDO CÓDIGO (AGUARDA 5s)...
+                    <Icon name="refresh" size={16} className="spin-animation" /> GENERANDO CÓDIGO (AGUARDA 10-15s)...
                   </span>
                 ) : (
                   'GENERAR CÓDIGO DE 8 DÍGITOS'

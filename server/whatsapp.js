@@ -9,6 +9,10 @@ let currentStatus = 'DESCONECTADO';
 let lastQr = null;
 let lastPairingCode = null;
 let isSyncing = false;
+let isStartingClient = false;
+let activePairingPromise = null;
+let currentPairingPhone = null;
+let lastPairingCodeTime = 0;
 
 const cleanChromiumLocks = () => {
     try {
@@ -79,132 +83,154 @@ const getStatus = () => ({
 });
 
 const startClient = async (pairingPhoneNumber = null) => {
-    await terminateClient();
-
-    currentStatus = pairingPhoneNumber ? 'GENERANDO CÓDIGO' : 'INICIANDO';
-    lastQr = null;
-    lastPairingCode = null;
-    if (io) io.emit('status', currentStatus);
-
-    console.log(`--- STARTING WHATSAPP CLIENT (Mode: ${pairingPhoneNumber ? 'Pairing Code (' + pairingPhoneNumber + ')' : 'QR Code'}) ---`);
-
-    const sessionDir = path.join(__dirname, 'sessions');
-    cleanChromiumLocks();
-
-    const clientOptions = {
-        authStrategy: new LocalAuth({ dataPath: sessionDir }),
-        puppeteer: {
-            headless: true,
-            protocolTimeout: 60000,
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-accelerated-2d-canvas',
-                '--no-first-run',
-                '--no-zygote',
-                '--disable-gpu',
-                '--disable-features=IsolateOrigins,site-per-process',
-                '--disable-site-isolation-trials'
-            ]
+    if (isStartingClient) {
+        console.log('--- startClient ya en ejecución, aguardando inicio previo... ---');
+        while (isStartingClient) {
+            await new Promise(r => setTimeout(r, 200));
         }
-    };
-
-    if (pairingPhoneNumber) {
-        clientOptions.pairWithPhoneNumber = {
-            phoneNumber: pairingPhoneNumber,
-            showNotification: true,
-            intervalMs: 180000
-        };
+        return;
     }
-
-    client = new Client(clientOptions);
-
-    client.on('qr', (qr) => {
-        // 1. Si el bot ya está online, ignorar eventos de QR residuales
-        if (currentStatus === 'BOT ONLINE') {
-            console.log('--- QR IGNORADO (BOT ONLINE) ---');
-            return;
-        }
-        // 2. Si se está en proceso de vinculación por código telefónico, NO pisar el código ni cambiar a ESPERANDO ESCANEO
-        if (lastPairingCode || currentStatus === 'CÓDIGO GENERADO' || currentStatus === 'GENERANDO CÓDIGO') {
-            lastQr = qr;
-            console.log('--- QR EN SEGUNDO PLANO (MODO CÓDIGO ACTIVO) ---');
-            return;
-        }
-        lastQr = qr;
-        lastPairingCode = null;
-        currentStatus = 'ESPERANDO ESCANEO';
-        console.log('--- QR RECEIVED ---');
-        if (io) {
-            io.emit('qr', qr);
-            io.emit('status', currentStatus);
-        }
-    });
-
-    client.on('code', (code) => {
-        lastPairingCode = code;
-        currentStatus = 'CÓDIGO GENERADO';
-        console.log('--- PAIRING CODE RECEIVED:', code, '---');
-        if (io) {
-            io.emit('pairing_code', code);
-            io.emit('status', currentStatus);
-        }
-    });
-
-    client.on('authenticated', () => {
-        console.log('--- CLIENT AUTHENTICATED (CÓDIGO ACEPTADO EN EL CELULAR) ---');
-        currentStatus = 'CONECTANDO...';
-        lastQr = null;
-        if (io) {
-            io.emit('authenticated', true);
-            io.emit('status', currentStatus);
-        }
-    });
-
-    client.on('ready', async () => {
-        currentStatus = 'BOT ONLINE';
-        lastQr = null;
-        lastPairingCode = null;
-        console.log('--- CLIENT READY ---');
-        if (io) {
-            io.emit('ready', true);
-            io.emit('status', currentStatus);
-        }
-        
-        // Carga inicial de etiquetas
-        try {
-            const labels = await client.getLabels();
-            if (io) io.emit('labels', labels);
-        } catch (e) {}
-    });
-
-    client.on('auth_failure', (msg) => {
-        console.error('--- AUTH FAILURE ---', msg);
-        currentStatus = 'DESCONECTADO';
-        lastQr = null;
-        lastPairingCode = null;
-        if (io) io.emit('status', currentStatus);
-        // NO eliminar sessionDir automáticamente para proteger las credenciales ante fallos transitorios
-        client = null;
-    });
-
-    client.on('disconnected', (reason) => {
-        currentStatus = 'DESCONECTADO';
-        lastQr = null;
-        lastPairingCode = null;
-        console.log('--- DISCONNECTED ---', reason);
-        if (io) io.emit('status', currentStatus);
-        client = null;
-    });
+    isStartingClient = true;
 
     try {
-        await client.initialize();
-    } catch (err) {
-        console.error('Init Error:', err);
-        currentStatus = 'DESCONECTADO';
+        await terminateClient();
+
+        currentStatus = pairingPhoneNumber ? 'GENERANDO CÓDIGO' : 'INICIANDO';
+        lastQr = null;
+        lastPairingCode = null;
         if (io) io.emit('status', currentStatus);
-        client = null;
+
+        console.log(`--- STARTING WHATSAPP CLIENT (Mode: ${pairingPhoneNumber ? 'Pairing Code (' + pairingPhoneNumber + ')' : 'QR Code'}) ---`);
+
+        const sessionDir = path.join(__dirname, 'sessions');
+        cleanChromiumLocks();
+
+        const clientOptions = {
+            authStrategy: new LocalAuth({ dataPath: sessionDir }),
+            puppeteer: {
+                headless: true,
+                protocolTimeout: 60000,
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-accelerated-2d-canvas',
+                    '--no-first-run',
+                    '--no-zygote',
+                    '--disable-gpu',
+                    '--disable-features=IsolateOrigins,site-per-process',
+                    '--disable-site-isolation-trials'
+                ]
+            }
+        };
+
+        if (pairingPhoneNumber) {
+            clientOptions.pairWithPhoneNumber = {
+                phoneNumber: pairingPhoneNumber,
+                showNotification: true,
+                intervalMs: 180000
+            };
+        }
+
+        client = new Client(clientOptions);
+
+        client.on('qr', (qr) => {
+            // 1. Si el bot ya está online, ignorar eventos de QR residuales
+            if (currentStatus === 'BOT ONLINE') {
+                console.log('--- QR IGNORADO (BOT ONLINE) ---');
+                return;
+            }
+            // 2. Si se está en proceso de vinculación por código telefónico, NO pisar el código ni cambiar a ESPERANDO ESCANEO
+            if (lastPairingCode || currentStatus === 'CÓDIGO GENERADO' || currentStatus === 'GENERANDO CÓDIGO') {
+                lastQr = qr;
+                console.log('--- QR EN SEGUNDO PLANO (MODO CÓDIGO ACTIVO) ---');
+                return;
+            }
+            lastQr = qr;
+            lastPairingCode = null;
+            currentStatus = 'ESPERANDO ESCANEO';
+            console.log('--- QR RECEIVED ---');
+            if (io) {
+                io.emit('qr', qr);
+                io.emit('status', currentStatus);
+            }
+        });
+
+        client.on('code', (code) => {
+            lastPairingCode = code;
+            lastPairingCodeTime = Date.now();
+            currentStatus = 'CÓDIGO GENERADO';
+            console.log('--- PAIRING CODE RECEIVED:', code, '---');
+            if (io) {
+                io.emit('pairing_code', code);
+                io.emit('status', currentStatus);
+            }
+        });
+
+        client.on('authenticated', () => {
+            console.log('--- CLIENT AUTHENTICATED (CÓDIGO ACEPTADO EN EL CELULAR) ---');
+            currentStatus = 'CONECTANDO...';
+            lastQr = null;
+            lastPairingCode = null;
+            currentPairingPhone = null;
+            lastPairingCodeTime = 0;
+            if (io) {
+                io.emit('authenticated', true);
+                io.emit('status', currentStatus);
+            }
+        });
+
+        client.on('ready', async () => {
+            currentStatus = 'BOT ONLINE';
+            lastQr = null;
+            lastPairingCode = null;
+            currentPairingPhone = null;
+            lastPairingCodeTime = 0;
+            console.log('--- CLIENT READY ---');
+            if (io) {
+                io.emit('ready', true);
+                io.emit('status', currentStatus);
+            }
+            
+            // Carga inicial de etiquetas
+            try {
+                const labels = await client.getLabels();
+                if (io) io.emit('labels', labels);
+            } catch (e) {}
+        });
+
+        client.on('auth_failure', (msg) => {
+            console.error('--- AUTH FAILURE ---', msg);
+            currentStatus = 'DESCONECTADO';
+            lastQr = null;
+            lastPairingCode = null;
+            currentPairingPhone = null;
+            lastPairingCodeTime = 0;
+            if (io) io.emit('status', currentStatus);
+            client = null;
+        });
+
+        client.on('disconnected', (reason) => {
+            currentStatus = 'DESCONECTADO';
+            lastQr = null;
+            lastPairingCode = null;
+            currentPairingPhone = null;
+            lastPairingCodeTime = 0;
+            console.log('--- DISCONNECTED ---', reason);
+            if (io) io.emit('status', currentStatus);
+            client = null;
+        });
+
+        try {
+            await client.initialize();
+        } catch (err) {
+            console.error('Init Error:', err.message || err);
+            currentStatus = 'DESCONECTADO';
+            if (io) io.emit('status', currentStatus);
+            client = null;
+        }
+    } finally {
+        isStartingClient = false;
     }
 };
 
@@ -742,51 +768,81 @@ const sanitizePairingNumber = (raw) => {
     return digits;
 };
 
-const requestPairingCode = async (phoneNumber) => {
+const requestPairingCode = async (phoneNumber, forceNew = false) => {
     const cleanNumber = sanitizePairingNumber(phoneNumber);
     if (!cleanNumber || cleanNumber.length < 8) {
         throw new Error('Número de teléfono inválido. Ingrese código de país y número (ej: 11 2345 6789 o 5491123456789).');
     }
 
-    console.log(`[PAIRING] Solicitud de código nativo para: ${cleanNumber}`);
-
     if (currentStatus === 'BOT ONLINE') {
         return { success: true, alreadyOnline: true, message: '¡El bot ya se encuentra en línea y conectado!' };
     }
 
-    // Resetear código previo para garantizar que siempre se obtenga y retorne uno nuevo
-    lastPairingCode = null;
-    currentStatus = 'GENERANDO CÓDIGO';
-    if (io) {
-        io.emit('status', currentStatus);
-        io.emit('pairing_code', null);
+    const now = Date.now();
+    const CODE_LIFETIME_MS = 140000; // 2 minutos y 20 segundos
+
+    // 1. Si ya existe un código vigente para este número y no se fuerza regeneración, retornarlo sin destruir Chromium
+    if (!forceNew && lastPairingCode && currentPairingPhone === cleanNumber && (now - lastPairingCodeTime < CODE_LIFETIME_MS) && currentStatus === 'CÓDIGO GENERADO' && client) {
+        console.log(`[PAIRING] Reutilizando código activo vigente: ${lastPairingCode} para ${cleanNumber}`);
+        return { 
+            success: true, 
+            code: lastPairingCode, 
+            phoneNumber: cleanNumber,
+            expiresInSeconds: Math.round((CODE_LIFETIME_MS - (now - lastPairingCodeTime)) / 1000)
+        };
     }
 
-    // Iniciar o reiniciar el cliente en modo código de vinculación telefónica
-    await startClient(cleanNumber);
-
-    // Esperar a que whatsapp-web.js emita el evento nativo 'code'
-    const maxWaitMs = 45000;
-    const startTime = Date.now();
-
-    while (!lastPairingCode && currentStatus !== 'BOT ONLINE' && currentStatus !== 'DESCONECTADO' && Date.now() - startTime < maxWaitMs) {
-        await new Promise(r => setTimeout(r, 500));
+    // 2. Si ya hay una generación en curso para este número, unirse a esa promesa (Single-Flight Mutex)
+    if (activePairingPromise) {
+        console.log(`[PAIRING] Solicitud concurrente detectada para ${cleanNumber}. Aguardando proceso activo...`);
+        return await activePairingPromise;
     }
 
-    if (lastPairingCode) {
-        console.log(`[PAIRING] Nuevo código obtenido con éxito: ${lastPairingCode}`);
-        return { success: true, code: lastPairingCode, phoneNumber: cleanNumber };
-    }
+    // 3. Crear proceso de generación con protección Mutex
+    activePairingPromise = (async () => {
+        try {
+            console.log(`[PAIRING] Iniciando solicitud de código nativo para: ${cleanNumber}`);
+            lastPairingCode = null;
+            currentPairingPhone = cleanNumber;
+            currentStatus = 'GENERANDO CÓDIGO';
+            if (io) {
+                io.emit('status', currentStatus);
+                io.emit('pairing_code', null);
+            }
 
-    if (currentStatus === 'BOT ONLINE') {
-        return { success: true, alreadyOnline: true, message: '¡El bot ya se encuentra en línea y conectado!' };
-    }
+            await startClient(cleanNumber);
 
-    throw new Error('No se pudo obtener el código a tiempo. Si WhatsApp limitó los intentos para esta línea, aguardá unos minutos antes de reintentar o utilizá el escaneo QR.');
+            const maxWaitMs = 40000;
+            const startTime = Date.now();
+
+            while (!lastPairingCode && currentStatus !== 'BOT ONLINE' && currentStatus !== 'DESCONECTADO' && Date.now() - startTime < maxWaitMs) {
+                await new Promise(r => setTimeout(r, 400));
+            }
+
+            if (lastPairingCode) {
+                lastPairingCodeTime = Date.now();
+                console.log(`[PAIRING] Nuevo código obtenido con éxito: ${lastPairingCode}`);
+                return { success: true, code: lastPairingCode, phoneNumber: cleanNumber };
+            }
+
+            if (currentStatus === 'BOT ONLINE') {
+                return { success: true, alreadyOnline: true, message: '¡El bot ya se encuentra en línea y conectado!' };
+            }
+
+            throw new Error('WhatsApp no respondió con un código a tiempo. Si intentaste varias veces seguidas, WhatsApp bloquea temporalmente los códigos para esta línea (5 a 10 min). Podés vincularte de inmediato escaneando el código QR en la pestaña "Escanear QR".');
+        } finally {
+            activePairingPromise = null;
+        }
+    })();
+
+    return await activePairingPromise;
 };
 
 const cancelPairingCode = async () => {
     lastPairingCode = null;
+    currentPairingPhone = null;
+    lastPairingCodeTime = 0;
+    activePairingPromise = null;
     currentStatus = 'DESCONECTADO';
     if (io) {
         io.emit('pairing_code', null);

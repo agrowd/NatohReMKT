@@ -209,10 +209,10 @@ app.post('/api/whatsapp/logout', async (req, res) => {
     try { await logout(); res.json({ success: true }); } catch (err) { res.status(500).json({ error: err.message }); }
 });
 app.post('/api/whatsapp/pair-phone', async (req, res) => {
-    const { phoneNumber } = req.body;
+    const { phoneNumber, forceNew } = req.body;
     if (!phoneNumber) return res.status(400).json({ error: 'Falta el número de teléfono.' });
     try {
-        const result = await requestPairingCode(phoneNumber);
+        const result = await requestPairingCode(phoneNumber, !!forceNew);
         res.json(result);
     } catch (err) {
         res.status(500).json({ error: err.message });

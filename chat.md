@@ -457,3 +457,7 @@ El usuario reporta: "Selecciono la lista virtual de luz o hifu, me da como resul
    - Reinicio de PM2 desacoplado mediante `process.exit(0)` diferido, evitando fallos por subprocesos muertos.
 6. **Mantenimiento del Estado de la Interfaz:**
    - La vista de vinculación telefónica mantiene el recuadro con el spinner de carga sin volver bruscamente al formulario inicial gracias a `(pairingCode || isRequestingPairing)`.
+7. **Protección Mutex Single-Flight contra Clics Múltiples:**
+   - Se implementó `activePairingPromise` y `isStartingClient` para evitar la colisión de navegadores que provocaba `Attempted to use detached Frame`.
+   - Reutilización de código activo por 140 segundos para no destruir la sesión mientras el usuario la ingresa en el celular.
+   - Botón directo de rescate a Código QR cuando WhatsApp limita las solicitudes telefónicas.
