@@ -784,87 +784,105 @@ const diagnoseLabels = async () => {
     if (!client || !client.pupPage || currentStatus !== 'BOT ONLINE') {
         return { error: 'Client not online' };
     }
-    return await client.pupPage.evaluate(() => {
-        let collections = {};
-        try { collections = window.require('WAWebCollections') || {}; } catch (e) {}
-        const store = window.Store || {};
-        
-        const chatModels = collections.Chat ? collections.Chat.getModelsArray() : (store.Chat ? store.Chat.getModelsArray() : []);
-        const labelModels = collections.Label ? collections.Label.getModelsArray() : (store.Label ? store.Label.getModelsArray() : []);
-        
-        // Check labels and their items
-        const labels = labelModels.map(l => ({
-            id: l.id,
-            name: l.name,
-            hexColor: l.hexColor,
-            itemCount: l.labelItemCollection ? l.labelItemCollection.length : 0,
-            items: l.labelItemCollection ? l.labelItemCollection.getModelsArray().map(i => ({
-                id: i.id,
-                parentId: i.parentId,
-                parentType: i.parentType
-            })) : []
-        }));
+    try {
+        return await client.pupPage.evaluate(() => {
+            try {
+                let collections = {};
+                try { collections = window.require('WAWebCollections') || {}; } catch (e) {}
+                const store = window.Store || {};
+                
+                const chatModels = collections.Chat ? collections.Chat.getModelsArray() : (store.Chat ? store.Chat.getModelsArray() : []);
+                const labelModels = collections.Label ? collections.Label.getModelsArray() : (store.Label ? store.Label.getModelsArray() : []);
+                
+                // Labels info
+                const labels = labelModels.map(l => ({
+                    id: String(l.id),
+                    name: String(l.name || ''),
+                    hexColor: String(l.hexColor || ''),
+                    itemCount: l.labelItemCollection ? Number(l.labelItemCollection.length) : 0,
+                    parentIds: l.labelItemCollection ? l.labelItemCollection.getModelsArray().map(i => String(i.parentId || '')) : []
+                }));
 
-        // Scan all properties across all chats to find any property with 'fav', 'star', 'pin', 'label', 'filter'
-        const sampleChat = chatModels[0] || {};
-        const allChatKeys = Object.keys(sampleChat);
-        const interestingKeys = allChatKeys.filter(k => 
-            /fav|star|pin|label|filter/i.test(k)
-        );
+                // Check chat properties
+                const sampleChat = chatModels[0] || {};
+                const allKeys = Object.keys(sampleChat).sort();
+                const matchedKeys = allKeys.filter(k => /fav|star|pin|label|filter|rank/i.test(k));
 
-        // Find chats that have any interesting property truthy or non-empty
-        const interestingChats = chatModels.filter(c => {
-            for (const k of interestingKeys) {
-                const val = c[k];
-                if (val !== undefined && val !== null && val !== false && val !== 0 && !(Array.isArray(val) && val.length === 0)) {
-                    return true;
+                // Find chats with ANY labels or ANY matchedKeys truthy
+                const foundChats = [];
+                for (const c of chatModels) {
+                    const id = c.id ? String(c.id._serialized || c.id) : 'unknown';
+                    const name = String(c.name || c.formattedTitle || c.pushname || '');
+                    const chatLabels = Array.isArray(c.labels) ? c.labels.map(String) : [];
+                    
+                    let hasMatch = chatLabels.length > 0;
+                    const props = {};
+                    for (const k of matchedKeys) {
+                        const val = c[k];
+                        if (val !== undefined && val !== null && val !== false && val !== 0 && !(Array.isArray(val) && val.length === 0)) {
+                            hasMatch = true;
+                            props[k] = typeof val === 'object' ? JSON.stringify(val) : val;
+                        }
+                    }
+
+                    if (hasMatch) {
+                        foundChats.push({
+                            id,
+                            name,
+                            labels: chatLabels,
+                            props
+                        });
+                    }
                 }
+
+                // Check all collection names in WAWebCollections
+                const collectionNames = Object.keys(collections).sort();
+                const matchedCollections = collectionNames.filter(k => /fav|filter|list|label/i.test(k));
+
+                // Check models of any collection matching 'fav' or 'filter'
+                const collectionsDetail = {};
+                for (const colName of matchedCollections) {
+                    try {
+                        const col = collections[colName];
+                        if (col && typeof col.getModelsArray === 'function') {
+                            const arr = col.getModelsArray();
+                            collectionsDetail[colName] = {
+                                count: arr.length,
+                                sampleModels: arr.slice(0, 5).map(m => {
+                                    const obj = {};
+                                    for (const k of Object.keys(m)) {
+                                        const v = m[k];
+                                        if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+                                            obj[k] = v;
+                                        } else if (v && v._serialized) {
+                                            obj[k] = v._serialized;
+                                        }
+                                    }
+                                    return obj;
+                                })
+                            };
+                        }
+                    } catch (e) {
+                        collectionsDetail[colName] = { error: e.message };
+                    }
+                }
+
+                return {
+                    totalChats: chatModels.length,
+                    labels,
+                    matchedKeys,
+                    foundChatsCount: foundChats.length,
+                    foundChats: foundChats.slice(0, 40),
+                    matchedCollections,
+                    collectionsDetail
+                };
+            } catch (err) {
+                return { error: err.message, stack: err.stack };
             }
-            return false;
-        }).map(c => {
-            const res = {
-                id: c.id ? c.id._serialized : 'unknown',
-                name: c.name || c.formattedTitle || ''
-            };
-            for (const k of interestingKeys) {
-                res[k] = c[k];
-            }
-            return res;
         });
-
-        // Store keys and collection keys
-        const storeKeys = Object.keys(store).filter(k => /fav|filter|list|label/i.test(k));
-        const collectionKeys = Object.keys(collections).filter(k => /fav|filter|list|label/i.test(k));
-
-        // Inspect any favorite-related collection in Store or Collections
-        let favoriteCollectionDump = null;
-        for (const colKey of [...storeKeys, ...collectionKeys]) {
-            if (/fav/i.test(colKey)) {
-                const col = store[colKey] || collections[colKey];
-                if (col && typeof col.getModelsArray === 'function') {
-                    favoriteCollectionDump = {
-                        key: colKey,
-                        models: col.getModelsArray().map(m => {
-                            const keys = Object.keys(m);
-                            const obj = {};
-                            for (const k of keys.slice(0, 15)) obj[k] = m[k];
-                            return obj;
-                        })
-                    };
-                }
-            }
-        }
-
-        return {
-            totalChats: chatModels.length,
-            labels,
-            interestingKeys,
-            interestingChats,
-            storeKeys,
-            collectionKeys,
-            favoriteCollectionDump
-        };
-    });
+    } catch (e) {
+        return { error: e.message };
+    }
 };
 
 const sanitizePairingNumber = (raw) => {
