@@ -426,14 +426,21 @@ function App() {
 
               <div className="pairing-code-box">
                 <div className="pairing-code-digits">
-                  {pairingCode.length === 8 
-                    ? `${pairingCode.slice(0, 4)} - ${pairingCode.slice(4)}` 
-                    : pairingCode}
+                  {isRequestingPairing ? (
+                    <span style={{ fontSize: '1.05rem', color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                      <Icon name="refresh" size={20} className="spin-animation" /> GENERANDO NUEVO CÓDIGO...
+                    </span>
+                  ) : (
+                    pairingCode.length === 8 
+                      ? `${pairingCode.slice(0, 4)} - ${pairingCode.slice(4)}` 
+                      : pairingCode
+                  )}
                 </div>
                 <button 
                   type="button"
                   className="btn" 
                   onClick={() => handleCopyCode(pairingCode)}
+                  disabled={isRequestingPairing}
                   style={{ 
                     marginTop: '0.9rem', 
                     background: copiedCode ? 'var(--primary)' : 'rgba(255,255,255,0.08)', 
@@ -460,7 +467,10 @@ function App() {
                   type="button"
                   className="btn" 
                   style={{ flex: 1, background: 'rgba(255,255,255,0.05)', fontSize: '0.8rem' }}
-                  onClick={() => { setPairingCode(null); }}
+                  onClick={() => { 
+                    setPairingCode(null); 
+                    axios.post(`${API_URL}/api/whatsapp/cancel-pair-phone`).catch(() => {});
+                  }}
                 >
                   Cambiar número
                 </button>
@@ -471,7 +481,13 @@ function App() {
                   onClick={handleRequestPairingCode}
                   disabled={isRequestingPairing}
                 >
-                  {isRequestingPairing ? 'Generando...' : 'Re-generar código'}
+                  {isRequestingPairing ? (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                      <Icon name="refresh" size={14} className="spin-animation" /> Generando...
+                    </span>
+                  ) : (
+                    'Re-generar código'
+                  )}
                 </button>
               </div>
             </div>

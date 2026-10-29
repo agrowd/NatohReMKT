@@ -426,3 +426,26 @@ El usuario reporta: "Selecciono la lista virtual de luz o hifu, me da como resul
 4. **Claridad en Frontend (`client/src/App.jsx`):**
    - Notificación diferenciada si una campaña finaliza sin nuevos envíos debido a exclusión anti-spam o destinatarios no registrados.
    - Protección total de `server/sessions/` para mantener la sesión de WhatsApp Web intacta.
+
+---
+
+## Sesión: Solución a Código de Vinculación Estancado al Regenerar (2026-10-29)
+
+### Consulta del Usuario
+"No me aparece otro codigo cuando pongo regenerar y se quedo en ese, revisa y solucionalo que el cliente me esta pidiendo" (Adjunta captura con código `GV52-AG6J`).
+
+### Diagnóstico de la Falla
+1. En `server/whatsapp.js`, la función `startClient()` contenía una condición preventiva:
+   `if (pairingPhoneNumber && lastPairingCode && currentStatus === 'CÓDIGO GENERADO') return;`
+2. Cuando el usuario pulsaba "Re-generar código", `currentStatus` ya era `'CÓDIGO GENERADO'` y `lastPairingCode` tenía el código anterior.
+3. Esto hacía que `startClient()` retornara inmediatamente sin hacer nada, y `requestPairingCode()` devolvía el mismo código anterior en memoria sin solicitar nunca un nuevo código a WhatsApp Web.
+
+### Soluciones Implementadas
+1. **Remoción de Guarda Bloqueante (`server/whatsapp.js`):**
+   - Se removió el retorno anticipado que impedía volver a generar códigos.
+2. **Generación en Caliente con `client.requestPairingCode()`:**
+   - Si la instancia de Chromium ya está activa, se utiliza directamente el método nativo de WhatsApp Web para generar un nuevo código en 1-2 segundos sin recargar la página.
+   - Se limpia `lastPairingCode` antes de solicitar el nuevo código para garantizar un código fresco.
+3. **Indicador Visual Reactivo (`client/src/App.jsx`):**
+   - Al pulsar "Re-generar código", el cuadro de dígitos muestra inmediatamente un spinner animado *"GENERANDO NUEVO CÓDIGO..."* hasta que llega el nuevo código.
+   - El botón "Cambiar número" ahora cancela la solicitud activa en el backend vía `/api/whatsapp/cancel-pair-phone`.

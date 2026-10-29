@@ -62,3 +62,12 @@
 4. Reparación en el normalizador de números para eliminar duplicados de prefijos (`1111` -> `11`).
 5. Feedback visual claro en `App.jsx` si una campaña finaliza con 0 enviados debido a exclusión anti-spam o destinatarios no registrados.
 **Estado:** ✅ FIXED
+
+## ERR-08: Código de Vinculación Estancado al Regenerar (2026-10-29)
+**Síntoma:** Al presionar "Re-generar código" en el modal de vinculación con teléfono, el sistema no cambiaba el código de 8 dígitos y seguía mostrando exactamente el mismo código expirado previo (ej. `GV52-AG6J`).
+**Root Cause:** En `server/whatsapp.js`, `startClient` poseía la guarda `if (pairingPhoneNumber && lastPairingCode && currentStatus === 'CÓDIGO GENERADO') return;`. Al estar el estado en `'CÓDIGO GENERADO'` y existir `lastPairingCode`, `startClient` retornaba inmediatamente sin hacer nada, y `requestPairingCode` devolvía la variable `lastPairingCode` vieja en memoria sin solicitar nunca un nuevo código a WhatsApp Web.
+**Solución:**
+1. Eliminación de la guarda bloqueante en `startClient`.
+2. Re-generación en caliente en `requestPairingCode`: Si la página de Chromium ya está activa, se resetea `lastPairingCode = null` y se invoca directamente `await client.requestPairingCode(cleanNumber)`, lo que genera un código nuevo en WhatsApp Web en 1-2 segundos sin reiniciar Chromium.
+3. Feedback reactivo en `client/src/App.jsx`: Muestra un spinner animado *"GENERANDO NUEVO CÓDIGO..."* en el recuadro de dígitos mientras se espera la respuesta, garantizando que el usuario y el frontend vean la renovación inmediata.
+**Estado:** ✅ FIXED

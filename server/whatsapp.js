@@ -34,9 +34,6 @@ const getStatus = () => ({
 const startClient = async (pairingPhoneNumber = null) => {
     // Si ya existe un cliente y queremos cambiar de modo o de número, destruimos la instancia previa limpiando listeners
     if (client) {
-        if (pairingPhoneNumber && lastPairingCode && currentStatus === 'CÓDIGO GENERADO') {
-            return;
-        }
         try {
             client.removeAllListeners();
             await client.destroy();
@@ -721,9 +718,41 @@ const requestPairingCode = async (phoneNumber) => {
         throw new Error('Número de teléfono inválido. Ingrese código de país y número (ej: 11 2345 6789 o 5491123456789).');
     }
 
-    console.log(`[PAIRING] Inicializando vinculación por código nativo para: ${cleanNumber}`);
+    console.log(`[PAIRING] Solicitud de código nativo para: ${cleanNumber}`);
 
-    // Iniciar o reiniciar el cliente con la opción nativa pairWithPhoneNumber
+    if (currentStatus === 'BOT ONLINE') {
+        return { success: true, alreadyOnline: true, message: '¡El bot ya se encuentra en línea y conectado!' };
+    }
+
+    // Resetear código previo para garantizar que siempre se obtenga y retorne uno nuevo
+    lastPairingCode = null;
+    currentStatus = 'GENERANDO CÓDIGO';
+    if (io) {
+        io.emit('status', currentStatus);
+        io.emit('pairing_code', null);
+    }
+
+    // 1. Si el cliente y su página de Chromium ya están activos y listos para vincular
+    if (client && client.pupPage) {
+        try {
+            console.log('[PAIRING] Solicitando nuevo código directamente a WhatsApp Web en caliente...');
+            const code = await client.requestPairingCode(cleanNumber);
+            if (code) {
+                lastPairingCode = code;
+                currentStatus = 'CÓDIGO GENERADO';
+                if (io) {
+                    io.emit('pairing_code', code);
+                    io.emit('status', currentStatus);
+                }
+                console.log('--- NUEVO PAIRING CODE GENERADO EN CALIENTE:', code, '---');
+                return { success: true, code, phoneNumber: cleanNumber };
+            }
+        } catch (hotErr) {
+            console.warn('[PAIRING] Solicitud en caliente falló, reiniciando instancia de cliente:', hotErr.message);
+        }
+    }
+
+    // 2. Si no hay cliente activo o falló la solicitud en caliente, arrancamos una instancia fresca
     await startClient(cleanNumber);
 
     // Esperar a que whatsapp-web.js emita el evento nativo 'code'
