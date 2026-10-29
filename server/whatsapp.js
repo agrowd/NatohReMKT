@@ -132,6 +132,18 @@ try {
             console.log('[PUPPETEER PATCH] IsolatedWorld disposed check bypassed if context exists');
         }
     }
+    const clientJsPath = path.join(__dirname, 'node_modules/whatsapp-web.js/src/Client.js');
+    if (fs.existsSync(clientJsPath)) {
+        let clientContent = fs.readFileSync(clientJsPath, 'utf8');
+        if (!clientContent.includes('/* patched destroy trace */')) {
+            clientContent = clientContent.replace(
+                /async\s+destroy\(\)\s*\{/,
+                'async destroy() {\n        /* patched destroy trace */\n        console.log("[CLIENT DESTROY CALLED FROM]:", new Error().stack);'
+            );
+            fs.writeFileSync(clientJsPath, clientContent);
+            console.log('[WHATSAPP-WEB.JS PATCH] Added stack trace to Client.destroy()');
+        }
+    }
 } catch (e) {
     console.error('[PUPPETEER PATCH ERROR]', e.message);
 }
@@ -277,6 +289,10 @@ const startClient = async (pairingPhoneNumber = null, forceRestart = false) => {
             } catch (e) {
                 console.error('[READY GETLABELS ERROR]:', e.message);
             }
+        });
+
+        client.on('change_state', (state) => {
+            console.log('--- CHANGE STATE ---', state);
         });
 
         client.on('auth_failure', (msg) => {
