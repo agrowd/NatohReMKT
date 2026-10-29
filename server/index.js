@@ -206,7 +206,7 @@ app.post('/api/whatsapp/restart', async (req, res) => {
     try { const result = await restartClient(); res.json(result); } catch (err) { res.status(500).json({ error: err.message }); }
 });
 app.post('/api/whatsapp/stop', async (req, res) => {
-    try { await stopClient(); res.json({ message: 'OK' }); } catch (err) { res.status(500).json({ error: err.message }); }
+    try { const result = await stopClient(); res.json(result); } catch (err) { res.status(500).json({ error: err.message }); }
 });
 app.post('/api/whatsapp/logout', async (req, res) => {
     try { await logout(); res.json({ success: true }); } catch (err) { res.status(500).json({ error: err.message }); }

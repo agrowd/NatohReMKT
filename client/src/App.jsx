@@ -87,6 +87,7 @@ function App() {
   const [isRequestingPairing, setIsRequestingPairing] = useState(false);
   const [pairingError, setPairingError] = useState('');
   const [isBotActionLoading, setIsBotActionLoading] = useState(false);
+  const [botFeedback, setBotFeedback] = useState(null); // { type: 'success' | 'info' | 'error', text: '' }
   const [connectTab, setConnectTab] = useState('qr'); // 'qr' | 'phone'
   const [copiedCode, setCopiedCode] = useState(false);
   const [mobileBuilderTab, setMobileBuilderTab] = useState('flow'); // 'flow' | 'audience'
@@ -318,6 +319,25 @@ function App() {
     };
 }, [user]);
 
+  // Sincronización periódica de respaldo cuando el modal está abierto o en transición
+  useEffect(() => {
+    if (!user) return;
+    const interval = setInterval(() => {
+      if (showQrModal || status === 'INICIANDO' || status === 'GENERANDO CÓDIGO' || status === 'CONECTANDO...') {
+        axios.get(`${API_URL}/api/whatsapp/status`).then(res => {
+          if (res.data) {
+            if (res.data.status && res.data.status !== status) {
+              setStatus(res.data.status);
+            }
+            if (res.data.qr !== undefined && res.data.status === 'ESPERANDO ESCANEO') setQr(res.data.qr);
+            if (res.data.pairingCode !== undefined && res.data.status === 'CÓDIGO GENERADO') setPairingCode(res.data.pairingCode);
+          }
+        }).catch(() => {});
+      }
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [user, showQrModal, status]);
+
   const getStatusInfo = (st) => {
     switch (st) {
       case 'BOT ONLINE':
@@ -398,11 +418,18 @@ function App() {
 
   const handleStartBot = async () => {
     setIsBotActionLoading(true);
+    setStatus('INICIANDO');
+    setPairingCode(null);
+    setPairingError('');
+    setShowQrModal(true);
     try {
       await axios.post(`${API_URL}/api/whatsapp/start`);
-      setShowQrModal(true);
+      setBotFeedback({ type: 'info', text: '🚀 Motor iniciado. Abriendo navegador y conectando con WhatsApp...' });
+      setTimeout(() => setBotFeedback(null), 5000);
     } catch (e) {
-      alert("Error al iniciar el bot: " + (e.response?.data?.error || e.message));
+      setStatus('DESCONECTADO');
+      setBotFeedback({ type: 'error', text: 'Error al iniciar el bot: ' + (e.response?.data?.error || e.message) });
+      setTimeout(() => setBotFeedback(null), 6000);
     } finally {
       setIsBotActionLoading(false);
     }
@@ -411,23 +438,40 @@ function App() {
   const handleRestartBot = async () => {
     if (!confirm('¿Deseas reiniciar el motor de WhatsApp? Esto cerrará y volverá a abrir Chromium de forma limpia.')) return;
     setIsBotActionLoading(true);
+    setStatus('INICIANDO');
+    setQr(null);
+    setPairingCode(null);
+    setPairingError('');
+    setIsRequestingPairing(false);
+    setShowQrModal(true);
     try {
       await axios.post(`${API_URL}/api/whatsapp/restart`);
-      setShowQrModal(true);
+      setBotFeedback({ type: 'info', text: '🔄 Motor reiniciado. Cargando nueva sesión limpia...' });
+      setTimeout(() => setBotFeedback(null), 5000);
     } catch (e) {
-      alert("Error al reiniciar el bot: " + (e.response?.data?.error || e.message));
+      setStatus('DESCONECTADO');
+      setBotFeedback({ type: 'error', text: 'Error al reiniciar el bot: ' + (e.response?.data?.error || e.message) });
+      setTimeout(() => setBotFeedback(null), 6000);
     } finally {
       setIsBotActionLoading(false);
     }
   };
 
   const handleStopBot = async () => {
-    if (!confirm('¿Deseas detener el bot de WhatsApp? El proceso de Chromium se cerrará.')) return;
+    if (!confirm('¿Deseas detener el bot de WhatsApp? El proceso del navegador se cerrará completamente.')) return;
     setIsBotActionLoading(true);
     try {
       await axios.post(`${API_URL}/api/whatsapp/stop`);
+      setStatus('DESCONECTADO');
+      setQr(null);
+      setPairingCode(null);
+      setPairingError('');
+      setIsRequestingPairing(false);
+      setBotFeedback({ type: 'success', text: '⏹️ El bot fue detenido correctamente y el navegador está apagado.' });
+      setTimeout(() => setBotFeedback(null), 5000);
     } catch (e) {
-      alert("Error al detener el bot: " + (e.response?.data?.error || e.message));
+      setBotFeedback({ type: 'error', text: 'Error al detener el bot: ' + (e.response?.data?.error || e.message) });
+      setTimeout(() => setBotFeedback(null), 6000);
     } finally {
       setIsBotActionLoading(false);
     }
@@ -449,6 +493,12 @@ function App() {
       });
       if (res.data && res.data.code) {
         setPairingCode(res.data.code);
+        setBotFeedback({ type: 'success', text: `📲 Código generado: ${res.data.code}` });
+        setTimeout(() => setBotFeedback(null), 6000);
+      } else if (res.data && res.data.aborted) {
+        setPairingCode(null);
+        setBotFeedback({ type: 'info', text: 'ℹ️ Solicitud de código cancelada.' });
+        setTimeout(() => setBotFeedback(null), 4000);
       }
     } catch (err) {
       setPairingError(err.response?.data?.error || err.message || 'Error al solicitar código.');
@@ -699,6 +749,8 @@ function App() {
                   <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
                     <Icon name="refresh" size={16} className="spin-animation" /> GENERANDO CÓDIGO (AGUARDA 10-15s)...
                   </span>
+                ) : status === 'DESCONECTADO' ? (
+                  'ENCENDER BOT Y GENERAR CÓDIGO'
                 ) : (
                   'GENERAR CÓDIGO DE 8 DÍGITOS'
                 )}
@@ -820,26 +872,49 @@ function App() {
                 )}
               </button>
             ) : (
-              <button
-                type="button"
-                className="btn"
-                onClick={handleRestartBot}
-                disabled={isBotActionLoading || status === 'INICIANDO' || isRequestingPairing}
-                title="Reiniciar navegador y destrabar procesos"
-                style={{
-                  padding: '6px 12px',
-                  fontSize: '0.75rem',
-                  background: 'rgba(255, 255, 255, 0.06)',
-                  color: '#fff',
-                  border: '1px solid var(--glass-border)',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '5px'
-                }}
-              >
-                <Icon name="refresh" size={13} className={isBotActionLoading ? 'spin-animation' : ''} />
-                <span>Reiniciar Bot</span>
-              </button>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={handleRestartBot}
+                  disabled={isBotActionLoading || status === 'INICIANDO' || isRequestingPairing}
+                  title="Reiniciar navegador y destrabar procesos"
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: '0.75rem',
+                    background: 'rgba(255, 255, 255, 0.06)',
+                    color: '#fff',
+                    border: '1px solid var(--glass-border)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px'
+                  }}
+                >
+                  <Icon name="refresh" size={13} className={isBotActionLoading ? 'spin-animation' : ''} />
+                  <span>Reiniciar</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={handleStopBot}
+                  disabled={isBotActionLoading}
+                  title="Detener y apagar el navegador"
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: '0.75rem',
+                    fontWeight: 800,
+                    background: 'rgba(255, 68, 68, 0.15)',
+                    color: '#ff4d4f',
+                    border: '1px solid rgba(255, 68, 68, 0.3)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px'
+                  }}
+                >
+                  <Icon name="stop" size={12} color="#ff4d4f" />
+                  <span>{isBotActionLoading ? 'Deteniendo...' : 'Detener'}</span>
+                </button>
+              </div>
             )}
 
             {activeCampaign && (
@@ -888,6 +963,28 @@ function App() {
             )}
           </div>
         </header>
+
+        {/* Notificación reactiva de acciones del bot */}
+        {botFeedback && (
+          <div 
+            style={{
+              background: botFeedback.type === 'success' ? '#00e676' : botFeedback.type === 'error' ? '#ff4d4f' : '#00b0ff',
+              color: '#000',
+              fontWeight: 800,
+              fontSize: '0.82rem',
+              padding: '9px 16px',
+              textAlign: 'center',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              boxShadow: '0 2px 10px rgba(0,0,0,0.3)',
+              letterSpacing: '0.3px'
+            }}
+          >
+            <span>{botFeedback.text}</span>
+          </div>
+        )}
 
         {/* Banner flotante de vinculación cuando el modal está cerrado */}
         {(qr || pairingCode) && !showQrModal && (
@@ -977,11 +1074,11 @@ function App() {
                           className="btn"
                           onClick={handleStopBot}
                           disabled={isBotActionLoading}
-                          style={{ padding: '5px 10px', fontSize: '0.75rem', background: 'rgba(255, 68, 68, 0.1)', color: '#ff4d4f', border: '1px solid rgba(255,68,68,0.2)', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
-                          title="Detener el proceso del bot"
+                          style={{ padding: '5px 12px', fontSize: '0.75rem', fontWeight: 800, background: 'rgba(255, 68, 68, 0.15)', color: '#ff4d4f', border: '1px solid rgba(255,68,68,0.3)', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                          title="Detener y apagar el navegador"
                         >
                           <Icon name="stop" size={12} color="#ff4d4f" />
-                          <span>Detener</span>
+                          <span>{isBotActionLoading ? 'Deteniendo...' : 'Detener'}</span>
                         </button>
                       </>
                     )}
@@ -990,6 +1087,24 @@ function App() {
                 <div style={{ fontSize: '0.78rem', opacity: 0.85, marginTop: '6px', lineHeight: 1.4, color: '#fff' }}>
                   {statusInfo.desc}
                 </div>
+
+                {botFeedback && (
+                  <div style={{
+                    marginTop: '10px',
+                    padding: '8px 12px',
+                    borderRadius: '10px',
+                    fontSize: '0.8rem',
+                    fontWeight: 700,
+                    background: botFeedback.type === 'success' ? 'rgba(0, 255, 136, 0.15)' : botFeedback.type === 'error' ? 'rgba(255, 68, 68, 0.15)' : 'rgba(0, 210, 255, 0.15)',
+                    color: botFeedback.type === 'success' ? 'var(--primary)' : botFeedback.type === 'error' ? '#ff4d4f' : '#00d2ff',
+                    border: `1px solid ${botFeedback.type === 'success' ? 'rgba(0, 255, 136, 0.3)' : botFeedback.type === 'error' ? 'rgba(255, 68, 68, 0.3)' : 'rgba(0, 210, 255, 0.3)'}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}>
+                    <span>{botFeedback.text}</span>
+                  </div>
+                )}
               </div>
 
               {renderConnectionBody()}

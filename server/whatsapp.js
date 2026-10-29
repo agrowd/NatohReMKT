@@ -10,6 +10,8 @@ let lastQr = null;
 let lastPairingCode = null;
 let isSyncing = false;
 let isStartingClient = false;
+let isStoppingClient = false;
+let currentInstanceId = 0;
 let activePairingPromise = null;
 let currentPairingPhone = null;
 let lastPairingCodeTime = 0;
@@ -96,6 +98,8 @@ const startClient = async (pairingPhoneNumber = null, forceRestart = false) => {
         return;
     }
     isStartingClient = true;
+    isStoppingClient = false;
+    const instanceId = ++currentInstanceId;
 
     try {
         await terminateClient();
@@ -105,7 +109,7 @@ const startClient = async (pairingPhoneNumber = null, forceRestart = false) => {
         lastPairingCode = null;
         if (io) io.emit('status', currentStatus);
 
-        console.log(`--- STARTING WHATSAPP CLIENT (Mode: ${pairingPhoneNumber ? 'Pairing Code (' + pairingPhoneNumber + ')' : 'QR Code'}) ---`);
+        console.log(`--- STARTING WHATSAPP CLIENT [Instancia #${instanceId}] (Mode: ${pairingPhoneNumber ? 'Pairing Code (' + pairingPhoneNumber + ')' : 'QR Code'}) ---`);
 
         const sessionDir = path.join(__dirname, 'sessions');
         cleanChromiumLocks();
@@ -140,6 +144,10 @@ const startClient = async (pairingPhoneNumber = null, forceRestart = false) => {
         client = new Client(clientOptions);
 
         client.on('qr', (qr) => {
+            if (instanceId !== currentInstanceId || isStoppingClient || currentStatus === 'DESCONECTADO') {
+                console.log(`--- QR IGNORADO (Instancia #${instanceId} obsoleta o bot detenido) ---`);
+                return;
+            }
             // 1. Si el bot ya está online, ignorar eventos de QR residuales
             if (currentStatus === 'BOT ONLINE') {
                 console.log('--- QR IGNORADO (BOT ONLINE) ---');
@@ -162,6 +170,10 @@ const startClient = async (pairingPhoneNumber = null, forceRestart = false) => {
         });
 
         client.on('code', (code) => {
+            if (instanceId !== currentInstanceId || isStoppingClient || currentStatus === 'DESCONECTADO') {
+                console.log(`--- CODE IGNORADO (Instancia #${instanceId} obsoleta o bot detenido) ---`);
+                return;
+            }
             lastPairingCode = code;
             lastPairingCodeTime = Date.now();
             currentStatus = 'CÓDIGO GENERADO';
@@ -173,6 +185,7 @@ const startClient = async (pairingPhoneNumber = null, forceRestart = false) => {
         });
 
         client.on('authenticated', () => {
+            if (instanceId !== currentInstanceId || isStoppingClient || currentStatus === 'DESCONECTADO') return;
             console.log('--- CLIENT AUTHENTICATED (CÓDIGO ACEPTADO EN EL CELULAR) ---');
             currentStatus = 'CONECTANDO...';
             lastQr = null;
@@ -186,6 +199,7 @@ const startClient = async (pairingPhoneNumber = null, forceRestart = false) => {
         });
 
         client.on('ready', async () => {
+            if (instanceId !== currentInstanceId || isStoppingClient || currentStatus === 'DESCONECTADO') return;
             currentStatus = 'BOT ONLINE';
             lastQr = null;
             lastPairingCode = null;
@@ -205,6 +219,7 @@ const startClient = async (pairingPhoneNumber = null, forceRestart = false) => {
         });
 
         client.on('auth_failure', (msg) => {
+            if (instanceId !== currentInstanceId) return;
             console.error('--- AUTH FAILURE ---', msg);
             currentStatus = 'DESCONECTADO';
             lastQr = null;
@@ -216,6 +231,7 @@ const startClient = async (pairingPhoneNumber = null, forceRestart = false) => {
         });
 
         client.on('disconnected', (reason) => {
+            if (instanceId !== currentInstanceId) return;
             currentStatus = 'DESCONECTADO';
             lastQr = null;
             lastPairingCode = null;
@@ -230,28 +246,41 @@ const startClient = async (pairingPhoneNumber = null, forceRestart = false) => {
             await client.initialize();
         } catch (err) {
             console.error('Init Error:', err.message || err);
-            currentStatus = 'DESCONECTADO';
-            if (io) io.emit('status', currentStatus);
-            client = null;
+            if (instanceId === currentInstanceId && !isStoppingClient) {
+                currentStatus = 'DESCONECTADO';
+                if (io) io.emit('status', currentStatus);
+                client = null;
+            }
         }
     } finally {
-        isStartingClient = false;
+        if (instanceId === currentInstanceId) {
+            isStartingClient = false;
+        }
     }
 };
 
 const stopClient = async () => {
-    await terminateClient();
+    console.log('--- STOPPING WHATSAPP CLIENT (DETENCIÓN MANUAL FORZADA) ---');
+    isStoppingClient = true;
+    currentInstanceId++; // Invalida cualquier evento pendiente de instancias anteriores
     currentStatus = 'DESCONECTADO';
     lastQr = null;
     lastPairingCode = null;
     currentPairingPhone = null;
     lastPairingCodeTime = 0;
     activePairingPromise = null;
+
     if (io) {
-        io.emit('status', currentStatus);
+        io.emit('status', 'DESCONECTADO');
         io.emit('qr', null);
         io.emit('pairing_code', null);
     }
+
+    await terminateClient();
+    isStartingClient = false;
+    isStoppingClient = false;
+    console.log('--- WHATSAPP CLIENT COMPLETAMENTE DETENIDO ---');
+    return { success: true, status: 'DESCONECTADO', message: 'Bot detenido y procesos cerrados correctamente' };
 };
 
 const restartClient = async () => {
@@ -830,12 +859,18 @@ const requestPairingCode = async (phoneNumber, forceNew = false) => {
             }
 
             await startClient(cleanNumber, true);
+            const waitInstanceId = currentInstanceId;
 
             const maxWaitMs = 40000;
             const startTime = Date.now();
 
-            while (!lastPairingCode && currentStatus !== 'BOT ONLINE' && currentStatus !== 'DESCONECTADO' && Date.now() - startTime < maxWaitMs) {
+            while (!lastPairingCode && currentStatus !== 'BOT ONLINE' && currentStatus !== 'DESCONECTADO' && !isStoppingClient && (waitInstanceId === currentInstanceId) && Date.now() - startTime < maxWaitMs) {
                 await new Promise(r => setTimeout(r, 400));
+            }
+
+            if (isStoppingClient || currentStatus === 'DESCONECTADO' || waitInstanceId !== currentInstanceId) {
+                console.log('[PAIRING] Solicitud de código abortada por detención manual.');
+                return { success: false, aborted: true, message: 'La solicitud de código fue cancelada porque el bot se detuvo.' };
             }
 
             if (lastPairingCode) {
