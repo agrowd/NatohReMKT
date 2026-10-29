@@ -876,102 +876,118 @@ const diagnoseLabels = async () => {
             url: t.url()
         })) : [];
 
-        // Try direct CDP evaluation on page._client()
+        // Try direct CDP evaluation via target._session()
         let cdpResult = null;
         let cdpError = null;
+        let sessionInfo = null;
         try {
-            const page = client.pupPage;
-            if (page && typeof page._client === 'function') {
-                const cdpSession = page._client();
-                const evalRes = await cdpSession.send('Runtime.evaluate', {
-                    expression: `(() => {
-                        const collections = window.require('WAWebCollections') || {};
-                        const chatModels = collections.Chat ? collections.Chat.getModelsArray() : [];
-                        const labelModels = collections.Label ? collections.Label.getModelsArray() : [];
+            if (client.pupBrowser) {
+                const pageTarget = client.pupBrowser.targets().find(t => t.type() === 'page' && t.url().includes('whatsapp.com'));
+                if (pageTarget) {
+                    const session = typeof pageTarget._session === 'function' ? pageTarget._session() : null;
+                    sessionInfo = {
+                        hasTarget: true,
+                        targetUrl: pageTarget.url(),
+                        hasSession: !!session,
+                        sessionType: session ? typeof session : null
+                    };
 
-                        const collectionKeys = Object.keys(collections);
-                        const favCollections = collectionKeys.filter(k => /fav|filter|list|custom/i.test(k));
+                    if (session) {
+                        const evalRes = await session.send('Runtime.evaluate', {
+                            expression: `(() => {
+                                const collections = window.require('WAWebCollections') || {};
+                                const chatModels = collections.Chat ? collections.Chat.getModelsArray() : [];
+                                const labelModels = collections.Label ? collections.Label.getModelsArray() : [];
 
-                        let label2Info = null;
-                        if (collections.Label) {
-                            const l2 = collections.Label.get('2');
-                            if (l2) {
-                                label2Info = {
-                                    id: l2.id,
-                                    name: l2.name,
-                                    keys: Object.keys(l2),
-                                    itemCount: l2.labelItemCollection ? (l2.labelItemCollection.getModelsArray ? l2.labelItemCollection.getModelsArray().length : l2.labelItemCollection.length) : null,
-                                    items: l2.labelItemCollection && l2.labelItemCollection.getModelsArray ? l2.labelItemCollection.getModelsArray().map(it => ({ id: it.id, parentId: it.parentId, parentType: it.parentType })) : []
+                                const collectionKeys = Object.keys(collections);
+                                const favCollections = collectionKeys.filter(k => /fav|filter|list|custom/i.test(k));
+
+                                let label2Info = null;
+                                if (collections.Label) {
+                                    const l2 = collections.Label.get('2');
+                                    if (l2) {
+                                        label2Info = {
+                                            id: l2.id,
+                                            name: l2.name,
+                                            keys: Object.keys(l2),
+                                            itemCount: l2.labelItemCollection ? (l2.labelItemCollection.getModelsArray ? l2.labelItemCollection.getModelsArray().length : l2.labelItemCollection.length) : null,
+                                            items: l2.labelItemCollection && l2.labelItemCollection.getModelsArray ? l2.labelItemCollection.getModelsArray().map(it => ({ id: it.id, parentId: it.parentId, parentType: it.parentType })) : []
+                                        };
+                                    }
+                                }
+
+                                const favCollectionsData = {};
+                                for (const fk of favCollections) {
+                                    try {
+                                        const col = collections[fk];
+                                        if (col && typeof col.getModelsArray === 'function') {
+                                            const models = col.getModelsArray();
+                                            favCollectionsData[fk] = {
+                                                count: models.length,
+                                                sample: models.slice(0, 5).map(m => {
+                                                    const out = {};
+                                                    for (const k of Object.keys(m).slice(0, 15)) {
+                                                        const v = m[k];
+                                                        out[k] = (typeof v === 'object' && v !== null) ? (v._serialized || (Array.isArray(v) ? v.length : 'object')) : v;
+                                                    }
+                                                    return out;
+                                                })
+                                            };
+                                        }
+                                    } catch (e) {
+                                        favCollectionsData[fk] = { error: e.message };
+                                    }
+                                }
+
+                                const sampleChat = chatModels[0] || {};
+                                const allChatKeys = Object.keys(sampleChat);
+                                const interestingKeys = allChatKeys.filter(k => /fav|star|pin|label|list|filter|rank|priority/i.test(k));
+
+                                const candidates = [];
+                                for (const c of chatModels) {
+                                    const id = c.id ? (c.id._serialized || String(c.id)) : 'unknown';
+                                    const name = String(c.name || c.formattedTitle || '');
+                                    const labels = Array.isArray(c.labels) ? c.labels : [];
+                                    
+                                    const props = {};
+                                    let isFavSignal = false;
+                                    for (const k of interestingKeys) {
+                                        const val = c[k];
+                                        if (val !== undefined && val !== null && val !== false && val !== 0 && !(Array.isArray(val) && val.length === 0)) {
+                                            props[k] = (typeof val === 'object' && val !== null) ? (val._serialized || (Array.isArray(val) ? val.length : 'object')) : val;
+                                            if (/fav/i.test(k) && Boolean(val)) isFavSignal = true;
+                                        }
+                                    }
+
+                                    if (labels.includes('2') || labels.includes(2) || isFavSignal || c.pinned) {
+                                        candidates.push({ id, name, labels, props, pinned: c.pinned });
+                                    }
+                                }
+
+                                return {
+                                    totalChats: chatModels.length,
+                                    labels: labelModels.map(l => ({ id: String(l.id), name: String(l.name) })),
+                                    collectionKeys,
+                                    favCollections,
+                                    favCollectionsData,
+                                    label2Info,
+                                    interestingKeys,
+                                    candidatesCount: candidates.length,
+                                    candidates
                                 };
-                            }
-                        }
-
-                        const favCollectionsData = {};
-                        for (const fk of favCollections) {
-                            try {
-                                const col = collections[fk];
-                                if (col && typeof col.getModelsArray === 'function') {
-                                    const models = col.getModelsArray();
-                                    favCollectionsData[fk] = {
-                                        count: models.length,
-                                        sample: models.slice(0, 5).map(m => {
-                                            const out = {};
-                                            for (const k of Object.keys(m).slice(0, 15)) {
-                                                const v = m[k];
-                                                out[k] = (typeof v === 'object' && v !== null) ? (v._serialized || (Array.isArray(v) ? v.length : 'object')) : v;
-                                            }
-                                            return out;
-                                        })
-                                    };
-                                }
-                            } catch (e) {
-                                favCollectionsData[fk] = { error: e.message };
-                            }
-                        }
-
-                        const sampleChat = chatModels[0] || {};
-                        const allChatKeys = Object.keys(sampleChat);
-                        const interestingKeys = allChatKeys.filter(k => /fav|star|pin|label|list|filter|rank|priority/i.test(k));
-
-                        const candidates = [];
-                        for (const c of chatModels) {
-                            const id = c.id ? (c.id._serialized || String(c.id)) : 'unknown';
-                            const name = String(c.name || c.formattedTitle || '');
-                            const labels = Array.isArray(c.labels) ? c.labels : [];
-                            
-                            const props = {};
-                            let isFavSignal = false;
-                            for (const k of interestingKeys) {
-                                const val = c[k];
-                                if (val !== undefined && val !== null && val !== false && val !== 0 && !(Array.isArray(val) && val.length === 0)) {
-                                    props[k] = (typeof val === 'object' && val !== null) ? (val._serialized || (Array.isArray(val) ? val.length : 'object')) : val;
-                                    if (/fav/i.test(k) && Boolean(val)) isFavSignal = true;
-                                }
-                            }
-
-                            if (labels.includes('2') || labels.includes(2) || isFavSignal || c.pinned) {
-                                candidates.push({ id, name, labels, props, pinned: c.pinned });
-                            }
-                        }
-
-                        return {
-                            totalChats: chatModels.length,
-                            labels: labelModels.map(l => ({ id: String(l.id), name: String(l.name) })),
-                            collectionKeys,
-                            favCollections,
-                            favCollectionsData,
-                            label2Info,
-                            interestingKeys,
-                            candidatesCount: candidates.length,
-                            candidates
-                        };
-                    })()`,
-                    returnByValue: true,
-                    awaitPromise: true
-                });
-                cdpResult = evalRes.result ? evalRes.result.value : evalRes;
+                            })()`,
+                            returnByValue: true,
+                            awaitPromise: true
+                        });
+                        cdpResult = evalRes.result ? evalRes.result.value : evalRes;
+                    } else {
+                        cdpError = 'pageTarget._session() returned null';
+                    }
+                } else {
+                    cdpError = 'No page target found for whatsapp.com';
+                }
             } else {
-                cdpError = 'page or page._client not available';
+                cdpError = 'pupBrowser is null';
             }
         } catch (ce) {
             cdpError = ce.message;
@@ -979,6 +995,7 @@ const diagnoseLabels = async () => {
 
         return {
             targets,
+            sessionInfo,
             cdpError,
             cdpResult
         };
