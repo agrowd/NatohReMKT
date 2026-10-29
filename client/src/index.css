@@ -411,6 +411,7 @@ body {
 
 .dot-ready { background: var(--primary); box-shadow: 0 0 10px var(--primary); animation: pulse 2s infinite; }
 .dot-waiting { background: #ffaa00; }
+.dot-offline { background: #71717a; }
 
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }

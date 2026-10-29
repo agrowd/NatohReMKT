@@ -82,7 +82,12 @@ const getStatus = () => ({
     isSyncing
 });
 
-const startClient = async (pairingPhoneNumber = null) => {
+const startClient = async (pairingPhoneNumber = null, forceRestart = false) => {
+    if (currentStatus === 'BOT ONLINE' && !forceRestart) {
+        console.log('--- startClient: Bot ya se encuentra en línea. No se reinicia. ---');
+        return;
+    }
+
     if (isStartingClient) {
         console.log('--- startClient ya en ejecución, aguardando inicio previo... ---');
         while (isStartingClient) {
@@ -239,7 +244,21 @@ const stopClient = async () => {
     currentStatus = 'DESCONECTADO';
     lastQr = null;
     lastPairingCode = null;
-    if (io) io.emit('status', currentStatus);
+    currentPairingPhone = null;
+    lastPairingCodeTime = 0;
+    activePairingPromise = null;
+    if (io) {
+        io.emit('status', currentStatus);
+        io.emit('qr', null);
+        io.emit('pairing_code', null);
+    }
+};
+
+const restartClient = async () => {
+    console.log('--- REINICIANDO CLIENTE DE WHATSAPP ---');
+    await stopClient();
+    await startClient(null, true);
+    return { success: true, message: 'Bot reiniciado con éxito' };
 };
 
 const logout = async () => {
@@ -810,7 +829,7 @@ const requestPairingCode = async (phoneNumber, forceNew = false) => {
                 io.emit('pairing_code', null);
             }
 
-            await startClient(cleanNumber);
+            await startClient(cleanNumber, true);
 
             const maxWaitMs = 40000;
             const startTime = Date.now();
@@ -829,7 +848,24 @@ const requestPairingCode = async (phoneNumber, forceNew = false) => {
                 return { success: true, alreadyOnline: true, message: '¡El bot ya se encuentra en línea y conectado!' };
             }
 
+            // Si llegamos acá, falló la obtención del código por timeout o limitación de WhatsApp
+            currentStatus = 'DESCONECTADO';
+            lastPairingCode = null;
+            if (io) {
+                io.emit('status', currentStatus);
+                io.emit('pairing_code', null);
+            }
             throw new Error('WhatsApp no respondió con un código a tiempo. Si intentaste varias veces seguidas, WhatsApp bloquea temporalmente los códigos para esta línea (5 a 10 min). Podés vincularte de inmediato escaneando el código QR en la pestaña "Escanear QR".');
+        } catch (err) {
+            if (currentStatus !== 'BOT ONLINE' && currentStatus !== 'CÓDIGO GENERADO') {
+                currentStatus = 'DESCONECTADO';
+                lastPairingCode = null;
+                if (io) {
+                    io.emit('status', currentStatus);
+                    io.emit('pairing_code', null);
+                }
+            }
+            throw err;
         } finally {
             activePairingPromise = null;
         }
@@ -856,6 +892,7 @@ module.exports = {
     initWhatsApp, 
     startClient, 
     stopClient, 
+    restartClient,
     logout, 
     getLabels, 
     getContactsByLabel, 

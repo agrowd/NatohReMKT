@@ -5,7 +5,7 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const db = require('./database');
-const { initWhatsApp, startClient, stopClient, logout, getLabels, getContactsByLabel, syncAllContacts, deepSyncLabels, tagContactsByQuery, sendMessage, getStatus, searchMessagesInHistory, cancelSearch, bulkTagChats, getActiveSearch, syncLabelsAndMembers, requestPairingCode, cancelPairingCode } = require('./whatsapp');
+const { initWhatsApp, startClient, stopClient, restartClient, logout, getLabels, getContactsByLabel, syncAllContacts, deepSyncLabels, tagContactsByQuery, sendMessage, getStatus, searchMessagesInHistory, cancelSearch, bulkTagChats, getActiveSearch, syncLabelsAndMembers, requestPairingCode, cancelPairingCode } = require('./whatsapp');
 
 
 
@@ -201,6 +201,9 @@ app.post('/api/settings', (req, res) => {
 
 app.post('/api/whatsapp/start', async (req, res) => {
     try { await startClient(); res.json({ message: 'OK' }); } catch (err) { res.status(500).json({ error: err.message }); }
+});
+app.post('/api/whatsapp/restart', async (req, res) => {
+    try { const result = await restartClient(); res.json(result); } catch (err) { res.status(500).json({ error: err.message }); }
 });
 app.post('/api/whatsapp/stop', async (req, res) => {
     try { await stopClient(); res.json({ message: 'OK' }); } catch (err) { res.status(500).json({ error: err.message }); }

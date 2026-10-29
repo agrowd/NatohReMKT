@@ -31,7 +31,10 @@ const Icon = ({ name, size = 20, color = "currentColor", onClick, style, classNa
     check: <polyline points="20 6 9 17 4 12"/>,
     save: <><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></>,
     copy: <><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></>,
-    phone: <><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></>
+    phone: <><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></>,
+    play: <polygon points="5 3 19 12 5 21 5 3" fill={color} stroke="none" />,
+    stop: <rect x="5" y="5" width="14" height="14" fill={color} stroke="none" rx="2" />,
+    power: <><path d="M18.36 6.64a9 9 0 1 1-12.73 0" /><line x1="12" y1="2" x2="12" y2="12" /></>
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" onClick={onClick} className={className} style={{ cursor: onClick ? 'pointer' : 'default', ...style }}>
@@ -83,6 +86,7 @@ function App() {
   const [phoneToPair, setPhoneToPair] = useState('');
   const [isRequestingPairing, setIsRequestingPairing] = useState(false);
   const [pairingError, setPairingError] = useState('');
+  const [isBotActionLoading, setIsBotActionLoading] = useState(false);
   const [connectTab, setConnectTab] = useState('qr'); // 'qr' | 'phone'
   const [copiedCode, setCopiedCode] = useState(false);
   const [mobileBuilderTab, setMobileBuilderTab] = useState('flow'); // 'flow' | 'audience'
@@ -314,6 +318,121 @@ function App() {
     };
 }, [user]);
 
+  const getStatusInfo = (st) => {
+    switch (st) {
+      case 'BOT ONLINE':
+        return {
+          title: 'BOT EN LÍNEA',
+          statusText: 'CONECTADO Y LISTO',
+          desc: 'WhatsApp está 100% conectado y sincronizado con tu línea. Listo para enviar campañas.',
+          color: 'var(--primary)',
+          bg: 'rgba(0, 255, 136, 0.08)',
+          border: 'rgba(0, 255, 136, 0.3)',
+          dotClass: 'dot-ready'
+        };
+      case 'INICIANDO':
+        return {
+          title: 'INICIANDO MOTOR...',
+          statusText: 'ABRIENDO CHROMIUM',
+          desc: 'Abriendo el navegador y cargando WhatsApp Web en el servidor. Aguardá unos segundos...',
+          color: '#00d2ff',
+          bg: 'rgba(0, 210, 255, 0.08)',
+          border: 'rgba(0, 210, 255, 0.3)',
+          dotClass: 'dot-waiting'
+        };
+      case 'ESPERANDO ESCANEO':
+        return {
+          title: 'LISTO PARA VINCULAR',
+          statusText: 'ESPERANDO ESCANEO QR',
+          desc: 'El motor está encendido. Escaneá el código QR con tu celular o cambiá a "Vincular con Teléfono".',
+          color: '#ffaa00',
+          bg: 'rgba(255, 170, 0, 0.1)',
+          border: 'rgba(255, 170, 0, 0.35)',
+          dotClass: 'dot-waiting'
+        };
+      case 'GENERANDO CÓDIGO':
+        return {
+          title: 'SOLICITANDO CÓDIGO...',
+          statusText: 'GENERANDO CÓDIGO DE 8 DÍGITOS',
+          desc: 'Solicitando código de vinculación para tu línea a WhatsApp (demora 10-15s)...',
+          color: '#a78bfa',
+          bg: 'rgba(167, 139, 250, 0.1)',
+          border: 'rgba(167, 139, 250, 0.35)',
+          dotClass: 'dot-waiting'
+        };
+      case 'CÓDIGO GENERADO':
+        return {
+          title: 'CÓDIGO ACTIVO',
+          statusText: 'CÓDIGO DE 8 DÍGITOS LISTO',
+          desc: 'Ingresá este código en tu WhatsApp > Dispositivos Vinculados > Vincular con teléfono.',
+          color: 'var(--primary)',
+          bg: 'rgba(0, 255, 136, 0.08)',
+          border: 'rgba(0, 255, 136, 0.3)',
+          dotClass: 'dot-ready'
+        };
+      case 'CONECTANDO...':
+        return {
+          title: 'VINCULANDO SESIÓN...',
+          statusText: 'CÓDIGO ACEPTADO EN EL CELULAR',
+          desc: 'Sincronizando chats e historial de WhatsApp. Aguardá un instante...',
+          color: '#00d2ff',
+          bg: 'rgba(0, 210, 255, 0.08)',
+          border: 'rgba(0, 210, 255, 0.3)',
+          dotClass: 'dot-ready'
+        };
+      case 'DESCONECTADO':
+      default:
+        return {
+          title: 'BOT DESCONECTADO',
+          statusText: 'MOTOR DETENIDO',
+          desc: 'El motor está apagado. Hacé clic en "INICIAR BOT" para encenderlo y ver el QR o código.',
+          color: 'var(--text-dim)',
+          bg: 'rgba(255, 255, 255, 0.03)',
+          border: 'var(--glass-border)',
+          dotClass: 'dot-offline'
+        };
+    }
+  };
+
+  const statusInfo = getStatusInfo(status);
+
+  const handleStartBot = async () => {
+    setIsBotActionLoading(true);
+    try {
+      await axios.post(`${API_URL}/api/whatsapp/start`);
+      setShowQrModal(true);
+    } catch (e) {
+      alert("Error al iniciar el bot: " + (e.response?.data?.error || e.message));
+    } finally {
+      setIsBotActionLoading(false);
+    }
+  };
+
+  const handleRestartBot = async () => {
+    if (!confirm('¿Deseas reiniciar el motor de WhatsApp? Esto cerrará y volverá a abrir Chromium de forma limpia.')) return;
+    setIsBotActionLoading(true);
+    try {
+      await axios.post(`${API_URL}/api/whatsapp/restart`);
+      setShowQrModal(true);
+    } catch (e) {
+      alert("Error al reiniciar el bot: " + (e.response?.data?.error || e.message));
+    } finally {
+      setIsBotActionLoading(false);
+    }
+  };
+
+  const handleStopBot = async () => {
+    if (!confirm('¿Deseas detener el bot de WhatsApp? El proceso de Chromium se cerrará.')) return;
+    setIsBotActionLoading(true);
+    try {
+      await axios.post(`${API_URL}/api/whatsapp/stop`);
+    } catch (e) {
+      alert("Error al detener el bot: " + (e.response?.data?.error || e.message));
+    } finally {
+      setIsBotActionLoading(false);
+    }
+  };
+
   const handleRequestPairingCode = async (e, forceNew = false) => {
     if (e) e.preventDefault();
     if (isRequestingPairing) return;
@@ -413,15 +532,29 @@ function App() {
                 </span>
               </div>
             </div>
+          ) : status === 'INICIANDO' ? (
+            <div style={{ padding: '2.5rem 1.25rem', background: 'rgba(0, 210, 255, 0.04)', borderRadius: '16px', border: '1px dashed rgba(0, 210, 255, 0.3)', margin: '1rem 0', textAlign: 'center' }}>
+              <Icon name="refresh" size={36} color="#00d2ff" className="spin-animation" style={{ margin: '0 auto 0.75rem' }} />
+              <div style={{ fontWeight: 800, fontSize: '1rem', color: '#00d2ff', marginBottom: '6px' }}>Iniciando Motor de WhatsApp...</div>
+              <p style={{ opacity: 0.85, fontSize: '0.82rem', maxWidth: '340px', margin: '0 auto', color: '#fff', lineHeight: 1.4 }}>
+                Abriendo Chromium y conectando con WhatsApp Web. El código QR aparecerá automáticamente en 5 a 10 segundos.
+              </p>
+            </div>
           ) : (
-            <div style={{ padding: '2rem 1rem', background: 'rgba(255,255,255,0.02)', borderRadius: '16px', border: '1px dashed var(--glass-border)', margin: '1rem 0', textAlign: 'center' }}>
-              <p style={{ opacity: 0.7, fontSize: '0.88rem', marginBottom: '1.25rem' }}>El bot está desconectado o inicializando.</p>
+            <div style={{ padding: '2.5rem 1.25rem', background: 'rgba(255,255,255,0.02)', borderRadius: '16px', border: '1px dashed var(--glass-border)', margin: '1rem 0', textAlign: 'center' }}>
+              <Icon name="power" size={32} color="var(--text-dim)" style={{ margin: '0 auto 0.75rem', opacity: 0.6 }} />
+              <div style={{ fontWeight: 800, fontSize: '0.95rem', color: '#fff', marginBottom: '6px' }}>Motor de WhatsApp Detenido</div>
+              <p style={{ opacity: 0.7, fontSize: '0.82rem', marginBottom: '1.25rem', maxWidth: '320px', margin: '0 auto 1.25rem' }}>
+                Hacé clic en el botón para encender el motor y generar el código QR de vinculación.
+              </p>
               <button 
                 type="button"
                 className="btn btn-primary" 
-                style={{ width: '100%' }}
-                onClick={() => axios.post(`${API_URL}/api/whatsapp/start`)}
+                style={{ width: '100%', fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '0.85rem' }}
+                onClick={handleStartBot}
+                disabled={isBotActionLoading}
               >
+                <Icon name="play" size={16} color="#000" />
                 ENCENDER BOT Y GENERAR QR
               </button>
             </div>
@@ -541,16 +674,16 @@ function App() {
                 <div style={{ background: 'rgba(255, 183, 77, 0.12)', color: '#ffb74d', padding: '12px 14px', borderRadius: '10px', fontSize: '0.82rem', marginBottom: '1rem', border: '1px solid rgba(255, 183, 77, 0.3)', lineHeight: 1.4 }}>
                   <div style={{ fontWeight: 600 }}>⚠️ {pairingError}</div>
                   <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255, 183, 77, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
-                    <span style={{ fontSize: '0.76rem', color: '#fff', opacity: 0.85 }}>¿No querés esperar? Podés escanear el QR:</span>
+                    <span style={{ fontSize: '0.76rem', color: '#fff', opacity: 0.85 }}>¿No querés esperar? Podés escanear el QR ahora mismo:</span>
                     <button 
                       type="button" 
                       onClick={() => {
                         setConnectTab('qr');
-                        axios.post(`${API_URL}/api/whatsapp/start`).catch(() => {});
+                        handleStartBot();
                       }}
-                      style={{ background: 'var(--primary)', border: 'none', color: '#000', borderRadius: '6px', padding: '5px 12px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                      style={{ background: 'var(--primary)', border: 'none', color: '#000', borderRadius: '6px', padding: '6px 14px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                     >
-                      <Icon name="qr" size={14} /> Vincular con QR ahora
+                      <Icon name="qr" size={14} color="#000" /> Vincular con QR ahora (Sin esperar)
                     </button>
                   </div>
                 </div>
@@ -649,11 +782,65 @@ function App() {
             <div 
               className={`status-pill ${status === 'BOT ONLINE' ? 'status-online' : (status === 'ESPERANDO ESCANEO' || qr || pairingCode) ? 'status-qr' : 'status-offline'}`}
               onClick={() => setShowQrModal(true)}
-              title="Tocar para ver código QR o estado de WhatsApp"
+              title="Tocar para ver panel de control y estado de WhatsApp"
+              style={{ cursor: 'pointer' }}
             >
-              <div className={`dot ${status === 'BOT ONLINE' ? 'dot-ready' : 'dot-waiting'}`} />
-              <span>{status === 'BOT ONLINE' ? 'BOT ONLINE' : (qr || pairingCode) ? '📲 VINCULAR BOT' : status}</span>
+              <div className={`dot ${statusInfo.dotClass}`} />
+              <span>{statusInfo.title}</span>
             </div>
+
+            {/* BOTÓN MANUAL DE CONTROL DEL BOT */}
+            {status === 'DESCONECTADO' ? (
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleStartBot}
+                disabled={isBotActionLoading}
+                style={{
+                  padding: '6px 14px',
+                  fontSize: '0.78rem',
+                  fontWeight: 900,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: '0 0 15px rgba(0, 255, 136, 0.35)',
+                  letterSpacing: '0.4px'
+                }}
+              >
+                {isBotActionLoading ? (
+                  <>
+                    <Icon name="refresh" size={14} className="spin-animation" color="#000" />
+                    <span>INICIANDO...</span>
+                  </>
+                ) : (
+                  <>
+                    <Icon name="play" size={14} color="#000" />
+                    <span>INICIAR BOT</span>
+                  </>
+                )}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn"
+                onClick={handleRestartBot}
+                disabled={isBotActionLoading || status === 'INICIANDO' || isRequestingPairing}
+                title="Reiniciar navegador y destrabar procesos"
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '0.75rem',
+                  background: 'rgba(255, 255, 255, 0.06)',
+                  color: '#fff',
+                  border: '1px solid var(--glass-border)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '5px'
+                }}
+              >
+                <Icon name="refresh" size={13} className={isBotActionLoading ? 'spin-animation' : ''} />
+                <span>Reiniciar Bot</span>
+              </button>
+            )}
 
             {activeCampaign && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flex: 1, minWidth: '200px', maxWidth: '420px' }}>
@@ -740,6 +927,69 @@ function App() {
                 >
                   <Icon name="x" size={20} />
                 </button>
+              </div>
+
+              {/* PANEL DE CONTROL Y ESTADO EN VIVO DEL MOTOR */}
+              <div style={{
+                background: statusInfo.bg,
+                border: `1px solid ${statusInfo.border}`,
+                borderRadius: '14px',
+                padding: '0.9rem 1.1rem',
+                marginBottom: '1.25rem'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div className={`dot ${statusInfo.dotClass}`} style={{ width: '10px', height: '10px' }} />
+                    <span style={{ fontWeight: 800, fontSize: '0.88rem', color: statusInfo.color, letterSpacing: '0.3px' }}>
+                      {statusInfo.title}
+                    </span>
+                    <span style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: '12px', background: 'rgba(255,255,255,0.06)', color: '#fff', opacity: 0.85 }}>
+                      {statusInfo.statusText}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    {status === 'DESCONECTADO' ? (
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={handleStartBot}
+                        disabled={isBotActionLoading}
+                        style={{ padding: '6px 14px', fontSize: '0.78rem', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                      >
+                        <Icon name="play" size={13} color="#000" />
+                        <span>INICIAR BOT</span>
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="btn"
+                          onClick={handleRestartBot}
+                          disabled={isBotActionLoading || status === 'INICIANDO'}
+                          style={{ padding: '5px 10px', fontSize: '0.75rem', background: 'rgba(255,255,255,0.08)', color: '#fff', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                          title="Cerrar y abrir Chromium limpiamente"
+                        >
+                          <Icon name="refresh" size={12} className={isBotActionLoading ? 'spin-animation' : ''} />
+                          <span>Reiniciar</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="btn"
+                          onClick={handleStopBot}
+                          disabled={isBotActionLoading}
+                          style={{ padding: '5px 10px', fontSize: '0.75rem', background: 'rgba(255, 68, 68, 0.1)', color: '#ff4d4f', border: '1px solid rgba(255,68,68,0.2)', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                          title="Detener el proceso del bot"
+                        >
+                          <Icon name="stop" size={12} color="#ff4d4f" />
+                          <span>Detener</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+                <div style={{ fontSize: '0.78rem', opacity: 0.85, marginTop: '6px', lineHeight: 1.4, color: '#fff' }}>
+                  {statusInfo.desc}
+                </div>
               </div>
 
               {renderConnectionBody()}
