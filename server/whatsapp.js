@@ -780,12 +780,37 @@ const syncLabelsAndMembers = async () => {
     }
 };
 
+const getActivePage = async () => {
+    if (client && client.pupBrowser) {
+        try {
+            const pages = await client.pupBrowser.pages();
+            for (const p of pages) {
+                if (!p.isClosed() && p.url().includes('whatsapp.com')) {
+                    client.pupPage = p;
+                    return p;
+                }
+            }
+            if (pages.length > 0) {
+                client.pupPage = pages[pages.length - 1];
+                return client.pupPage;
+            }
+        } catch (e) {
+            console.error('[GET ACTIVE PAGE ERROR]', e.message);
+        }
+    }
+    return client ? client.pupPage : null;
+};
+
 const diagnoseLabels = async () => {
-    if (!client || !client.pupPage || currentStatus !== 'BOT ONLINE') {
+    if (!client || currentStatus !== 'BOT ONLINE') {
         return { error: 'Client not online' };
     }
+    const page = await getActivePage();
+    if (!page) {
+        return { error: 'No active page found' };
+    }
     try {
-        return await client.pupPage.evaluate(() => {
+        return await page.evaluate(() => {
             try {
                 let collections = {};
                 try { collections = window.require('WAWebCollections') || {}; } catch (e) {}
