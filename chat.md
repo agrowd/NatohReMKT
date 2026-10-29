@@ -461,3 +461,29 @@ El usuario reporta: "Selecciono la lista virtual de luz o hifu, me da como resul
    - Se implementó `activePairingPromise` y `isStartingClient` para evitar la colisión de navegadores que provocaba `Attempted to use detached Frame`.
    - Reutilización de código activo por 140 segundos para no destruir la sesión mientras el usuario la ingresa en el celular.
    - Botón directo de rescate a Código QR cuando WhatsApp limita las solicitudes telefónicas.
+
+---
+
+## Sesión: Botón de Control Manual e Indicadores de Estado en Tiempo Real (2026-10-29)
+
+### Consulta del Usuario
+"pone un boton para que yo inicie el whatsapp, el bot, ya que sino no se entiende cuando cargo o no o cuando genera o no los codigos" + capturas con errores de timeout en código de vinculación.
+
+### Causa Raíz
+1. Cuando WhatsApp Web aplicaba rate limit (`t`) a la línea tras múltiples solicitudes de código telefónico en poco tiempo, el backend aguardaba 40 segundos, entraba en timeout y lanzaba una excepción.
+2. Al lanzar la excepción, `currentStatus` quedaba retenido en `'GENERANDO CÓDIGO'` sin resetearse a `'DESCONECTADO'`, dejando la UI bloqueada en un estado de carga falso y suprimiendo la emisión de códigos QR.
+3. No existía un botón de control manual accesible en la cabecera ni en el modal para encender, reiniciar o detener el motor de Chromium con feedback paso a paso.
+
+### Solución Implementada
+1. **Control de Estados y Recuperación de Fallos (`server/whatsapp.js` & `server/index.js`):**
+   - Reseteo garantizado de `currentStatus = 'DESCONECTADO'` y emisión vía Socket.io ante excepciones o timeouts en `requestPairingCode`.
+   - Creación de `restartClient()` y endpoint `POST /api/whatsapp/restart` para reciclado forzado y limpio de la sesión sin tocar los archivos de sesión guardados.
+   - Protección de `startClient()` para no destruir sesiones activas cuando el bot ya se encuentra en `'BOT ONLINE'`.
+2. **Panel de Control Manual y Píldora de Estado Reactiva (`client/src/App.jsx`):**
+   - **Barra Superior (Top Bar):** Botón verde de alto impacto `[▶️ INICIAR BOT]` visible cuando el motor está apagado, con feedback interactivo durante el arranque y botón `[🔄 Reiniciar Bot]` cuando está activo.
+   - **Modal de Conexión:** Panel dinámico superior con LED de estado, etiqueta contextual (`ONLINE`, `INICIANDO`, `ESPERANDO ESCANEO`, `GENERANDO CÓDIGO`, `CÓDIGO LISTO`, `APAGADO`), explicación didáctica del proceso y botones de acción manual (`[▶️ INICIAR BOT]`, `[🔄 Reiniciar]`, `[⏹️ Detener]`).
+   - **Pestaña QR:** Animación explicativa de inicio de Chromium y botón manual de encendido.
+   - **Pestaña Teléfono:** Alerta ante rate limit de WhatsApp con botón directo `[📲 Vincular con QR ahora (Sin esperar)]`.
+3. **Despliegue y Verificación:**
+   - Desplegado en VPS en producción.
+   - Verificado `/api/whatsapp/status` activo en estado `'ESPERANDO ESCANEO'` con código QR generado y listo.

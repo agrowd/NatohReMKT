@@ -1,32 +1,26 @@
 # Workcycle Log - Sesión Actual
 
-## 📋 Tarea: Solución a Código de Vinculación Estancado al Regenerar y Blindaje de Proceso
-- **Objetivo:** Resolver el problema donde al hacer clic en "Re-generar código" en el modal de WhatsApp, la pantalla mantenía fijo el código anterior (ej. `GV52-AG6J`) y no generaba ni mostraba uno nuevo para el cliente.
+## 📋 Tarea: Panel de Control Manual de WhatsApp, Diagnóstico en Vivo y Desbloqueo de Estados
+- **Objetivo:** 
+  1. Agregar botón manual y visible para iniciar, reiniciar y detener el bot de WhatsApp con control absoluto del usuario.
+  2. Proveer feedback visual en tiempo real de cada fase del motor (`DESCONECTADO`, `INICIANDO`, `ESPERANDO ESCANEO`, `GENERANDO CÓDIGO`, `CÓDIGO GENERADO`, `CONECTANDO...`, `BOT ONLINE`) para eliminar toda ambigüedad.
+  3. Prevenir estados bloqueados (`GENERANDO CÓDIGO` persistente) cuando WhatsApp Web rechaza o agota el tiempo de vinculación telefónica por rate limiting de la línea.
 - **Diagnóstico Realizado:**
-  - En `server/whatsapp.js`, `startClient()` contenía una condición temprana: `if (pairingPhoneNumber && lastPairingCode && currentStatus === 'CÓDIGO GENERADO') return;`.
-  - Al solicitar regeneración, el estado ya estaba en `'CÓDIGO GENERADO'` y `lastPairingCode` tenía el código previo. La función retornaba sin ejecutar nada, y `requestPairingCode()` devolvía el código viejo en memoria.
-  - Al destruir y recrear la instancia de Chromium, `client.destroy()` podía colgarse o dejar procesos huérfanos en Linux que retenían los archivos de bloqueo `SingletonLock` en `server/sessions/session/`. Las nuevas instancias quedaban colgadas intentando bloquear el perfil.
-  - La falta de handlers para `unhandledRejection` en Node causaba que errores transitorios de la API de WhatsApp Web (`t`) tiraran abajo el proceso de Node con `ECONNRESET`.
-  - En la UI, al resetearse `pairingCode` a `null`, la pantalla volvía abruptamente al formulario en lugar de mantener la vista con el spinner de carga.
+  - Si WhatsApp Web respondía con error de rate limit (`t`) tras múltiples solicitudes de código telefónico seguidas para la misma línea, `requestPairingCode` caía en timeout de 40s y lanzaba una excepción.
+  - Al lanzar la excepción, `currentStatus` permanecía en `'GENERANDO CÓDIGO'` indefinidamente sin resetearse a `'DESCONECTADO'`, impidiendo la emisión y visualización del código QR y dejando la interfaz bloqueada.
+  - El usuario no disponía de un botón visible para encender o reiniciar manualmente el motor desde la barra superior, generando confusión sobre si el bot estaba activo o cargando.
 - **Acciones Implementadas:**
-  1. **Eliminación del bloqueo en `server/whatsapp.js`:**
-     - Se quitó el retorno prematuro en `startClient()`.
-  2. **Ciclo de vida limpio de Chromium (`terminateClient` + `cleanChromiumLocks`):**
-     - Se implementó `terminateClient()` con timeout estricto de 2s para `client.destroy()`, envío de señal `SIGKILL` al subproceso si sigue vivo, y `pkill -9 -f "sessions/session"` en Linux para limpiar procesos huérfanos.
-     - Limpieza física de los cerrojos de Chromium (`SingletonLock`, `SingletonCookie`, `SingletonSocket`, `DevToolsActivePort`).
-  3. **Blindaje del Proceso y Reinicio Desacoplado:**
-     - `server/index.js` ahora captura `process.on('unhandledRejection')` y `uncaughtException` para garantizar 100% de disponibilidad.
-     - Los endpoints de administración (`/api/admin/restart-api` y `/api/admin/build-ui`) utilizan un reinicio desacoplado con `process.exit(0)` diferido tras responder al cliente HTTP.
-  4. **Feedback visual reactivo en `client/src/App.jsx`:**
-     - Condición `(pairingCode || isRequestingPairing)` para evitar que la UI salte al formulario inicial durante la generación.
-     - Contenedor de dígitos con spinner animado *"GENERANDO NUEVO CÓDIGO..."* mientras se procesa la solicitud.
-     - Manejo de errores visuales en rojo y botón "Cambiar número" que cancela y limpia el estado.
-  5. **Protección Concurrente Single-Flight y Preservación de Código Activo:**
-     - Mutex `activePairingPromise` y flag `isStartingClient` que impiden que clics múltiples aborten el proceso de Chromium en vuelo con `Navigating frame was detached`.
-     - Reutilización de código activo vigente por 140s sin reiniciar el navegador para que el usuario pueda digitarlo en su teléfono sin perder la sesión.
-     - Botón de rescate directo en la alerta para cambiar inmediatamente a escaneo QR si WhatsApp aplicó rate limit temporal a la línea.
+  1. **Control de Estados en Backend (`server/whatsapp.js` & `server/index.js`):**
+     - Se añadió protección en `activePairingPromise`: ante fallo o timeout, `currentStatus` se resetea inmediatamente a `'DESCONECTADO'`, `lastPairingCode = null` y se emite la actualización por Socket.io.
+     - Se agregó protección a `startClient`: si el bot ya está en `'BOT ONLINE'`, no se reinicia a menos que se especifique `forceRestart = true` (evita matar sesiones activas).
+     - Se crearon los métodos `restartClient()` y endpoint `/api/whatsapp/restart` para forzar cierre limpio y nuevo arranque en cualquier momento.
+     - `stopClient()` limpia completamente referencias, códigos, temporizadores y procesos huérfanos.
+  2. **Panel de Control Manual y Píldora Reactiva (`client/src/App.jsx`):**
+     - **Top Bar:** Botón prominente `[▶️ INICIAR BOT]` en verde neón visible cuando el motor está detenido (`status === 'DESCONECTADO'`), con spinner animado durante el arranque y botón `[🔄 Reiniciar Bot]` cuando el bot está activo.
+     - **Modal de Conexión:** Nuevo componente superior con indicador LED dinámico, título de estado, badge contextual (`ONLINE`, `INICIANDO`, `ESPERANDO ESCANEO`, `GENERANDO CÓDIGO`, `CÓDIGO LISTO`, `APAGADO`), explicación en lenguaje claro de lo que ocurre en el servidor y botones manuales de `[▶️ INICIAR BOT]`, `[🔄 Reiniciar]` y `[⏹️ Detener]`.
+     - **Pestaña QR:** Vista informativa animada mientras el navegador inicia y botón manual para encender y generar QR si está detenido.
+     - **Pestaña Teléfono:** Alerta explicativa clara ante bloqueo de rate limit de WhatsApp con botón directo `[📲 Vincular con QR ahora (Sin esperar)]`.
 - **Resultado de Verificación:**
-  - Desplegado y compilado en VPS en tiempo récord (198ms build UI).
-  - Verificado extremo a extremo con número de prueba (`5491122334455` -> código `T83J6A64`).
-  - Verificado y generado exitosamente código nuevo para el cliente (`5491159524489` -> código **`GHL7ZPHL`**).
-  - Endpoint `/api/whatsapp/status` activo en estado `'CÓDIGO GENERADO'` con `pairingCode: "GHL7ZPHL"`.
+  - Compilado local y en VPS sin errores (153ms build time).
+  - Verificado live endpoint `/api/whatsapp/status` en VPS: estado `'ESPERANDO ESCANEO'` con string QR emitido correctamente.
+  - Interfaz web disponible en `http://149.50.128.73:8989` con los nuevos controles.
