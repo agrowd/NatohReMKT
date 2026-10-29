@@ -91,10 +91,13 @@ try {
     const decPath = path.join(__dirname, 'node_modules/puppeteer-core/lib/cjs/puppeteer/util/decorators.js');
     if (fs.existsSync(decPath)) {
         let decContent = fs.readFileSync(decPath, 'utf8');
-        if (decContent.includes('if (this.disposed) {')) {
-            decContent = decContent.replace('if (this.disposed) {', 'if (this.disposed && this.constructor.name !== "CdpFrame") {');
+        if (!decContent.includes('this.constructor.name !== "CdpFrame"')) {
+            decContent = decContent.replace(
+                /if\s*\(\s*this\.disposed\s*\)\s*\{\s*throw new Error\(message\(this\)\);/,
+                'if (this.disposed && this.constructor.name !== "CdpFrame") {\n                throw new Error(message(this));'
+            );
             fs.writeFileSync(decPath, decContent);
-            console.log('[PUPPETEER PATCH] CdpFrame disposed check disabled');
+            console.log('[PUPPETEER PATCH] CdpFrame disposed check bypassed in throwIfDisposed');
         }
     }
 } catch (e) {
