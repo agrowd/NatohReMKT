@@ -806,44 +806,14 @@ const diagnoseLabels = async () => {
         return { error: 'Client not online' };
     }
     try {
-        const pages = await client.pupBrowser.pages();
-        const page = client.pupPage || (pages.length > 0 ? pages[0] : null);
-        const mainFrame = page ? page.mainFrame() : null;
-        
-        let framesDetails = [];
-        if (page) {
-            framesDetails = page.frames().map(f => ({
-                id: f._id,
-                url: f.url(),
-                detached: f.detached
-            }));
-        }
+        const targets = client.pupBrowser ? client.pupBrowser.targets().map(t => ({
+            type: t.type(),
+            url: t.url()
+        })) : [];
 
-        let nonDetachedEval = null;
-        let evalError = null;
-        try {
-            const workingFrame = page.frames().find(f => !f.detached);
-            if (workingFrame) {
-                nonDetachedEval = await workingFrame.evaluate(() => {
-                    const collections = window.require('WAWebCollections') || {};
-                    return {
-                        success: true,
-                        labels: collections.Label ? collections.Label.getModelsArray().map(l => ({ id: l.id, name: l.name })) : [],
-                        chatsCount: collections.Chat ? collections.Chat.getModelsArray().length : 0
-                    };
-                });
-            }
-        } catch (ee) {
-            evalError = ee.message;
-        }
-
+        // Check if creating a CDP session or creating a new page or inspecting targets works
         return {
-            pagesCount: pages.length,
-            pageUrl: page ? page.url() : null,
-            mainFrameDetached: mainFrame ? mainFrame.detached : null,
-            framesDetails,
-            nonDetachedEval,
-            evalError
+            targets
         };
     } catch (e) {
         return { error: e.message, stack: e.stack };
