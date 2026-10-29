@@ -806,14 +806,15 @@ const diagnoseLabels = async () => {
         return { error: 'Client not online' };
     }
     try {
-        const pageTarget = client.pupBrowser.targets().find(t => t.type() === 'page');
-        const targetPage = pageTarget ? await pageTarget.page() : null;
+        const cdpClient = client.pupPage._client();
+        const evalRes = await cdpClient.send('Runtime.evaluate', {
+            expression: '1 + 1',
+            returnByValue: true
+        });
         
         return {
-            isSamePage: targetPage === client.pupPage,
-            targetPageUrl: targetPage ? targetPage.url() : null,
-            targetPageMainFrameDetached: targetPage && targetPage.mainFrame() ? targetPage.mainFrame().detached : null,
-            clientPupPageMainFrameDetached: client.pupPage && client.pupPage.mainFrame() ? client.pupPage.mainFrame().detached : null
+            success: true,
+            evalRes
         };
     } catch (e) {
         return { error: e.message, stack: e.stack };
