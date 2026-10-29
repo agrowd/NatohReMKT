@@ -805,108 +805,45 @@ const diagnoseLabels = async () => {
     if (!client || currentStatus !== 'BOT ONLINE') {
         return { error: 'Client not online' };
     }
-    const page = await getActivePage();
-    if (!page) {
-        return { error: 'No active page found' };
-    }
     try {
-        return await page.evaluate(() => {
-            try {
-                let collections = {};
-                try { collections = window.require('WAWebCollections') || {}; } catch (e) {}
-                const store = window.Store || {};
-                
-                const chatModels = collections.Chat ? collections.Chat.getModelsArray() : (store.Chat ? store.Chat.getModelsArray() : []);
-                const labelModels = collections.Label ? collections.Label.getModelsArray() : (store.Label ? store.Label.getModelsArray() : []);
-                
-                // Labels info
-                const labels = labelModels.map(l => ({
-                    id: String(l.id),
-                    name: String(l.name || ''),
-                    hexColor: String(l.hexColor || ''),
-                    itemCount: l.labelItemCollection ? Number(l.labelItemCollection.length) : 0,
-                    parentIds: l.labelItemCollection ? l.labelItemCollection.getModelsArray().map(i => String(i.parentId || '')) : []
-                }));
-
-                // Check chat properties
-                const sampleChat = chatModels[0] || {};
-                const allKeys = Object.keys(sampleChat).sort();
-                const matchedKeys = allKeys.filter(k => /fav|star|pin|label|filter|rank/i.test(k));
-
-                // Find chats with ANY labels or ANY matchedKeys truthy
-                const foundChats = [];
-                for (const c of chatModels) {
-                    const id = c.id ? String(c.id._serialized || c.id) : 'unknown';
-                    const name = String(c.name || c.formattedTitle || c.pushname || '');
-                    const chatLabels = Array.isArray(c.labels) ? c.labels.map(String) : [];
-                    
-                    let hasMatch = chatLabels.length > 0;
-                    const props = {};
-                    for (const k of matchedKeys) {
-                        const val = c[k];
-                        if (val !== undefined && val !== null && val !== false && val !== 0 && !(Array.isArray(val) && val.length === 0)) {
-                            hasMatch = true;
-                            props[k] = typeof val === 'object' ? JSON.stringify(val) : val;
-                        }
-                    }
-
-                    if (hasMatch) {
-                        foundChats.push({
-                            id,
-                            name,
-                            labels: chatLabels,
-                            props
-                        });
-                    }
+        const pages = await client.pupBrowser.pages();
+        const frameInfo = [];
+        let workingFrame = null;
+        for (let pi = 0; pi < pages.length; pi++) {
+            const p = pages[pi];
+            const frames = p.frames();
+            for (let fi = 0; fi < frames.length; fi++) {
+                const f = frames[fi];
+                const detached = typeof f.isDetached === 'function' ? f.isDetached() : false;
+                frameInfo.push({
+                    pageIndex: pi,
+                    frameIndex: fi,
+                    url: f.url(),
+                    name: f.name(),
+                    isDetached: detached
+                });
+                if (!detached && !workingFrame && f.url().includes('whatsapp.com')) {
+                    workingFrame = f;
                 }
-
-                // Check all collection names in WAWebCollections
-                const collectionNames = Object.keys(collections).sort();
-                const matchedCollections = collectionNames.filter(k => /fav|filter|list|label/i.test(k));
-
-                // Check models of any collection matching 'fav' or 'filter'
-                const collectionsDetail = {};
-                for (const colName of matchedCollections) {
-                    try {
-                        const col = collections[colName];
-                        if (col && typeof col.getModelsArray === 'function') {
-                            const arr = col.getModelsArray();
-                            collectionsDetail[colName] = {
-                                count: arr.length,
-                                sampleModels: arr.slice(0, 5).map(m => {
-                                    const obj = {};
-                                    for (const k of Object.keys(m)) {
-                                        const v = m[k];
-                                        if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
-                                            obj[k] = v;
-                                        } else if (v && v._serialized) {
-                                            obj[k] = v._serialized;
-                                        }
-                                    }
-                                    return obj;
-                                })
-                            };
-                        }
-                    } catch (e) {
-                        collectionsDetail[colName] = { error: e.message };
-                    }
-                }
-
-                return {
-                    totalChats: chatModels.length,
-                    labels,
-                    matchedKeys,
-                    foundChatsCount: foundChats.length,
-                    foundChats: foundChats.slice(0, 40),
-                    matchedCollections,
-                    collectionsDetail
-                };
-            } catch (err) {
-                return { error: err.message, stack: err.stack };
             }
-        });
+        }
+
+        let evalResult = null;
+        if (workingFrame) {
+            evalResult = await workingFrame.evaluate(() => {
+                const collections = window.require('WAWebCollections') || {};
+                const labels = collections.Label ? collections.Label.getModelsArray().map(l => ({ id: l.id, name: l.name })) : [];
+                return {
+                    success: true,
+                    labels,
+                    chatsCount: collections.Chat ? collections.Chat.getModelsArray().length : 0
+                };
+            });
+        }
+
+        return { pagesCount: pages.length, frameInfo, evalResult };
     } catch (e) {
-        return { error: e.message };
+        return { error: e.message, stack: e.stack };
     }
 };
 
