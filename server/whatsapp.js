@@ -82,10 +82,22 @@ try {
     const fmPath = path.join(__dirname, 'node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/FrameManager.js');
     if (fs.existsSync(fmPath)) {
         let content = fs.readFileSync(fmPath, 'utf8');
+        let fmChanged = false;
         if (content.includes('TIME_FOR_WAITING_FOR_SWAP = 100;')) {
             content = content.replace('TIME_FOR_WAITING_FOR_SWAP = 100;', 'TIME_FOR_WAITING_FOR_SWAP = 10000;');
-            fs.writeFileSync(fmPath, content);
+            fmChanged = true;
             console.log('[PUPPETEER PATCH] TIME_FOR_WAITING_FOR_SWAP ampliado a 10000ms');
+        }
+        if (content.includes('this.#removeFramesRecursively(mainFrame);') && !content.includes('/* patched swap catch */')) {
+            content = content.replace(
+                /catch\s*\{\s*this\.#removeFramesRecursively\(mainFrame\);\s*\}/,
+                'catch {\n            /* patched swap catch */\n        }'
+            );
+            fmChanged = true;
+            console.log('[PUPPETEER PATCH] mainFrame self-destruct prevented in FrameManager');
+        }
+        if (fmChanged) {
+            fs.writeFileSync(fmPath, content);
         }
     }
     const decPath = path.join(__dirname, 'node_modules/puppeteer-core/lib/cjs/puppeteer/util/decorators.js');
@@ -98,6 +110,18 @@ try {
             );
             fs.writeFileSync(decPath, decContent);
             console.log('[PUPPETEER PATCH] CdpFrame disposed check bypassed in throwIfDisposed');
+        }
+    }
+    const iwPath = path.join(__dirname, 'node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/IsolatedWorld.js');
+    if (fs.existsSync(iwPath)) {
+        let iwContent = fs.readFileSync(iwPath, 'utf8');
+        if (!iwContent.includes('/* patched iw */')) {
+            iwContent = iwContent.replace(
+                /if\s*\(\s*this\.disposed\s*\)\s*\{\s*throw new Error\(`Execution context is not available[^`]+`\);\s*\}/,
+                '/* patched iw */\n        if (this.disposed && !this.#context) {\n            throw new Error(`Execution context is not available in detached frame or worker "${this.environment.url()}" (are you trying to evaluate?)`);\n        }'
+            );
+            fs.writeFileSync(iwPath, iwContent);
+            console.log('[PUPPETEER PATCH] IsolatedWorld disposed check bypassed if context exists');
         }
     }
 } catch (e) {
@@ -771,17 +795,19 @@ const bulkTagChats = async (chatIds, labelId) => {
 
 const syncLabelsAndMembers = async () => {
     if (!client || currentStatus !== 'BOT ONLINE') return [];
-    console.log("[LABELS SYNC] Iniciando sincronización profunda...");
+    console.log("[LABELS SYNC] Iniciando sincronización profunda de etiquetas...");
     try {
-        // 1. Obtener todos los chats de la sesión para forzar la carga de metadatos en la memoria del navegador
-        const allChats = await client.getChats();
-        console.log(`[LABELS SYNC] Sincronizados ${allChats.length} chats en memoria del navegador.`);
-
         const labels = await client.getLabels();
         for (const label of labels) {
             try {
-                const chats = await label.getChats();
-                console.log(`[LABELS SYNC] Leídos ${chats.length} chats para etiqueta "${label.name}".`);
+                let chats = [];
+                // Intentar obtener chats por método estándar de whatsapp-web.js
+                try {
+                    chats = await label.getChats();
+                } catch (ce) {
+                    console.warn(`[LABELS SYNC] label.getChats() falló para "${label.name}":`, ce.message);
+                }
+                console.log(`[LABELS SYNC] Leídos ${chats ? chats.length : 0} chats para etiqueta "${label.name}".`);
                 
                 // 2. Solo limpiamos y re-insertamos si la API devolvió al menos 1 miembro.
                 // Esto previene que una falla temporal de carga en el navegador borre la caché de la DB.
@@ -789,8 +815,12 @@ const syncLabelsAndMembers = async () => {
                     db.prepare('DELETE FROM label_members WHERE label_id = ?').run(label.id);
                     
                     for (const chat of chats) {
-                        db.prepare('INSERT OR IGNORE INTO contacts (id, name, number) VALUES (?, ?, ?)').run(chat.id._serialized, chat.name || '', chat.id.user);
-                        db.prepare('INSERT OR IGNORE INTO label_members (label_id, contact_id) VALUES (?, ?)').run(label.id, chat.id._serialized);
+                        const chatId = chat.id ? (chat.id._serialized || chat.id) : null;
+                        const chatNumber = chat.id && chat.id.user ? chat.id.user : (chatId ? chatId.split('@')[0] : '');
+                        if (chatId) {
+                            db.prepare('INSERT OR IGNORE INTO contacts (id, name, number) VALUES (?, ?, ?)').run(chatId, chat.name || '', chatNumber);
+                            db.prepare('INSERT OR IGNORE INTO label_members (label_id, contact_id) VALUES (?, ?)').run(label.id, chatId);
+                        }
                     }
                     console.log(`[LABELS SYNC] Guardados ${chats.length} miembros para etiqueta "${label.name}" en SQLite.`);
                 } else {
@@ -833,7 +863,11 @@ const diagnoseLabels = async () => {
         return { error: 'Client not online' };
     }
     try {
-        const diag = await client.pupPage.evaluate(() => {
+        const page = await getActivePage();
+        if (!page) {
+            return { error: 'No active WhatsApp page found' };
+        }
+        const diag = await page.evaluate(() => {
             const collections = window.require('WAWebCollections') || {};
             const store = window.Store || {};
             
@@ -842,39 +876,24 @@ const diagnoseLabels = async () => {
 
             // 1. Check all collections for names matching fav, list, filter
             const collectionKeys = Object.keys(collections);
-            const favCollections = collectionKeys.filter(k => /fav|filter|list/i.test(k));
+            const favCollections = collectionKeys.filter(k => /fav|filter|list|custom/i.test(k));
 
-            // 2. Sample first chat keys to see all available property names
-            const sampleChat = chatModels[0] || {};
-            const allChatKeys = Object.keys(sampleChat);
-            const interestingKeys = allChatKeys.filter(k => /fav|star|pin|label|list|filter|rank/i.test(k));
-
-            // 3. Scan chats for any interesting properties or labels without any heavy serialization
-            const candidates = [];
-            for (const c of chatModels) {
-                const id = c.id ? (c.id._serialized || String(c.id)) : 'unknown';
-                const name = String(c.name || c.formattedTitle || '');
-                const labels = Array.isArray(c.labels) ? c.labels : [];
-                
-                const props = {};
-                for (const k of interestingKeys) {
-                    const val = c[k];
-                    if (val !== undefined && val !== null && val !== false && val !== 0 && !(Array.isArray(val) && val.length === 0)) {
-                        props[k] = (typeof val === 'object' && val !== null) ? (val._serialized || (Array.isArray(val) ? val.length : 'object')) : val;
-                    }
-                }
-
-                if (labels.length > 0 || Object.keys(props).length > 0) {
-                    candidates.push({
-                        id,
-                        name,
-                        labels,
-                        props
-                    });
+            // 2. Check label '2'
+            let label2Info = null;
+            if (collections.Label) {
+                const l2 = collections.Label.get('2');
+                if (l2) {
+                    label2Info = {
+                        id: l2.id,
+                        name: l2.name,
+                        keys: Object.keys(l2),
+                        itemCount: l2.labelItemCollection ? (l2.labelItemCollection.getModelsArray ? l2.labelItemCollection.getModelsArray().length : l2.labelItemCollection.length) : null,
+                        items: l2.labelItemCollection && l2.labelItemCollection.getModelsArray ? l2.labelItemCollection.getModelsArray().map(i => ({ id: i.id, parentId: i.parentId, parentType: i.parentType })) : []
+                    };
                 }
             }
 
-            // 4. Check if any favCollection has models
+            // 3. Inspect favorite / filter collections
             const favCollectionsData = {};
             for (const fk of favCollections) {
                 try {
@@ -883,11 +902,11 @@ const diagnoseLabels = async () => {
                         const models = col.getModelsArray();
                         favCollectionsData[fk] = {
                             count: models.length,
-                            sample: models.slice(0, 5).map(m => {
+                            sample: models.slice(0, 10).map(m => {
                                 const out = {};
-                                for (const k of Object.keys(m).slice(0, 10)) {
+                                for (const k of Object.keys(m).slice(0, 15)) {
                                     const v = m[k];
-                                    out[k] = (typeof v === 'object' && v !== null) ? (v._serialized || 'object') : v;
+                                    out[k] = (typeof v === 'object' && v !== null) ? (v._serialized || (Array.isArray(v) ? v.length : 'object')) : v;
                                 }
                                 return out;
                             })
@@ -898,14 +917,48 @@ const diagnoseLabels = async () => {
                 }
             }
 
+            // 4. Sample chat properties
+            const sampleChat = chatModels[0] || {};
+            const allChatKeys = Object.keys(sampleChat);
+            const interestingKeys = allChatKeys.filter(k => /fav|star|pin|label|list|filter|rank|priority/i.test(k));
+
+            // 5. Scan all chats for candidates
+            const candidates = [];
+            for (const c of chatModels) {
+                const id = c.id ? (c.id._serialized || String(c.id)) : 'unknown';
+                const name = String(c.name || c.formattedTitle || '');
+                const labels = Array.isArray(c.labels) ? c.labels : [];
+                
+                const props = {};
+                let hasFavSignal = false;
+                for (const k of interestingKeys) {
+                    const val = c[k];
+                    if (val !== undefined && val !== null && val !== false && val !== 0 && !(Array.isArray(val) && val.length === 0)) {
+                        props[k] = (typeof val === 'object' && val !== null) ? (val._serialized || (Array.isArray(val) ? val.length : 'object')) : val;
+                        if (/fav/i.test(k) && Boolean(val)) hasFavSignal = true;
+                    }
+                }
+
+                if (labels.includes('2') || labels.includes(2) || hasFavSignal) {
+                    candidates.push({
+                        id,
+                        name,
+                        labels,
+                        props
+                    });
+                }
+            }
+
             return {
                 totalChats: chatModels.length,
                 labels: labelModels.map(l => ({ id: String(l.id), name: String(l.name) })),
+                collectionKeys,
                 favCollections,
                 favCollectionsData,
+                label2Info,
                 interestingKeys,
                 candidatesCount: candidates.length,
-                candidates: candidates.slice(0, 50)
+                candidates
             };
         });
         return diag;
