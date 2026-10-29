@@ -77,6 +77,21 @@ const initWhatsApp = async (socketIo) => {
     }
 };
 
+// Parche automático en runtime para Puppeteer 24 Frame Swap Timeout bug
+try {
+    const fmPath = path.join(__dirname, 'node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/FrameManager.js');
+    if (fs.existsSync(fmPath)) {
+        let content = fs.readFileSync(fmPath, 'utf8');
+        if (content.includes('TIME_FOR_WAITING_FOR_SWAP = 100;')) {
+            content = content.replace('TIME_FOR_WAITING_FOR_SWAP = 100;', 'TIME_FOR_WAITING_FOR_SWAP = 10000;');
+            fs.writeFileSync(fmPath, content);
+            console.log('[PUPPETEER PATCH] TIME_FOR_WAITING_FOR_SWAP ampliado a 10000ms');
+        }
+    }
+} catch (e) {
+    console.error('[PUPPETEER PATCH ERROR]', e.message);
+}
+
 const getStatus = () => ({
     status: currentStatus,
     qr: lastQr,
@@ -127,7 +142,7 @@ const startClient = async (pairingPhoneNumber = null, forceRestart = false) => {
                     '--no-first-run',
                     '--no-zygote',
                     '--disable-gpu',
-                    '--disable-features=IsolateOrigins,site-per-process',
+                    '--disable-features=IsolateOrigins,site-per-process,RenderDocument,BackForwardCache',
                     '--disable-site-isolation-trials'
                 ]
             }
@@ -806,16 +821,47 @@ const diagnoseLabels = async () => {
         return { error: 'Client not online' };
     }
     try {
-        const cdpClient = client.pupPage._client();
-        const evalRes = await cdpClient.send('Runtime.evaluate', {
-            expression: '1 + 1',
-            returnByValue: true
+        const diag = await client.pupPage.evaluate(() => {
+            const collections = window.require('WAWebCollections') || {};
+            const store = window.Store || {};
+            const chatModels = collections.Chat ? collections.Chat.getModelsArray() : [];
+            const labelModels = collections.Label ? collections.Label.getModelsArray() : [];
+
+            // Find all chats with ANY favorite-like property or label
+            const matchedChats = [];
+            for (const c of chatModels) {
+                const keys = Object.keys(c);
+                const favKeys = keys.filter(k => /fav/i.test(k));
+                const favProps = {};
+                for (const k of favKeys) {
+                    if (c[k]) favProps[k] = typeof c[k] === 'object' ? JSON.stringify(c[k]) : c[k];
+                }
+                const hasFav = Object.keys(favProps).length > 0;
+                const hasLabels = Array.isArray(c.labels) && c.labels.length > 0;
+                if (hasFav || hasLabels) {
+                    matchedChats.push({
+                        id: c.id ? c.id._serialized : 'unknown',
+                        name: c.name || c.formattedTitle || '',
+                        labels: c.labels || [],
+                        favProps
+                    });
+                }
+            }
+
+            return {
+                totalChats: chatModels.length,
+                labels: labelModels.map(l => ({
+                    id: String(l.id),
+                    name: String(l.name),
+                    itemCount: l.labelItemCollection ? l.labelItemCollection.length : 0,
+                    parentIds: l.labelItemCollection ? l.labelItemCollection.getModelsArray().map(i => i.parentId) : []
+                })),
+                matchedChatsCount: matchedChats.length,
+                matchedChats: matchedChats.slice(0, 30),
+                collectionsKeys: Object.keys(collections).filter(k => /fav|filter|list|label/i.test(k))
+            };
         });
-        
-        return {
-            success: true,
-            evalRes
-        };
+        return diag;
     } catch (e) {
         return { error: e.message, stack: e.stack };
     }
