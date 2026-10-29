@@ -274,7 +274,9 @@ const startClient = async (pairingPhoneNumber = null, forceRestart = false) => {
             try {
                 const labels = await client.getLabels();
                 if (io) io.emit('labels', labels);
-            } catch (e) {}
+            } catch (e) {
+                console.error('[READY GETLABELS ERROR]:', e.message);
+            }
         });
 
         client.on('auth_failure', (msg) => {
@@ -303,6 +305,23 @@ const startClient = async (pairingPhoneNumber = null, forceRestart = false) => {
 
         try {
             await client.initialize();
+            if (client && client.pupBrowser) {
+                const proc = client.pupBrowser.process ? client.pupBrowser.process() : null;
+                console.log(`[BROWSER] pupBrowser ready, PID: ${proc ? proc.pid : 'unknown'}`);
+                if (proc) {
+                    proc.on('exit', (code, sig) => {
+                        console.log(`[BROWSER EXIT] Chromium process exited with code: ${code}, signal: ${sig}`);
+                    });
+                    if (proc.stderr) {
+                        proc.stderr.on('data', (d) => {
+                            console.log(`[BROWSER STDERR]: ${d.toString().trim()}`);
+                        });
+                    }
+                }
+                client.pupBrowser.on('disconnected', () => {
+                    console.log('[BROWSER EVENT] pupBrowser emitted "disconnected"');
+                });
+            }
         } catch (err) {
             console.error('Init Error:', err.message || err);
             if (instanceId === currentInstanceId && !isStoppingClient) {
