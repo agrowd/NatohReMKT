@@ -140,7 +140,7 @@ app.post('/api/admin/build-ui', (req, res) => {
         const buildOut = execSync('npm run build', { cwd: clientDir, encoding: 'utf8', timeout: 60000 });
         let pm2Out = '';
         try {
-            pm2Out = execSync('pm2 restart natoh-ui', { encoding: 'utf8', timeout: 15000 });
+            pm2Out = execSync('pm2 restart natoh-ui natoh-api', { encoding: 'utf8', timeout: 15000 });
         } catch(pErr) {
             pm2Out = pErr.stdout || pErr.stderr || pErr.message;
         }
