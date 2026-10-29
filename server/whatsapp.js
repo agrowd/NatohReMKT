@@ -880,8 +880,14 @@ const diagnoseLabels = async () => {
         let cdpResult = null;
         let cdpError = null;
         let sessionInfo = null;
+        let browserInfo = null;
         try {
             if (client.pupBrowser) {
+                browserInfo = {
+                    isConnected: client.pupBrowser.isConnected(),
+                    wsEndpoint: client.pupBrowser.wsEndpoint(),
+                    browserTargetsCount: client.pupBrowser.targets().length
+                };
                 const pageTarget = client.pupBrowser.targets().find(t => t.type() === 'page' && t.url().includes('whatsapp.com'));
                 if (pageTarget) {
                     const session = typeof pageTarget._session === 'function' ? pageTarget._session() : null;
@@ -889,7 +895,8 @@ const diagnoseLabels = async () => {
                         hasTarget: true,
                         targetUrl: pageTarget.url(),
                         hasSession: !!session,
-                        sessionType: session ? typeof session : null
+                        sessionType: session ? typeof session : null,
+                        sessionClosed: session ? session._closed : null
                     };
 
                     if (session) {
@@ -994,6 +1001,7 @@ const diagnoseLabels = async () => {
         }
 
         return {
+            browserInfo,
             targets,
             sessionInfo,
             cdpError,
