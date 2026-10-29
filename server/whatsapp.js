@@ -96,6 +96,14 @@ try {
             fmChanged = true;
             console.log('[PUPPETEER PATCH] mainFrame self-destruct prevented in FrameManager');
         }
+        if (!content.includes('/* patched never detach main frame */')) {
+            content = content.replace(
+                /#removeFramesRecursively\(frame\)\s*\{/,
+                '#removeFramesRecursively(frame) {\n        /* patched never detach main frame */\n        if (!frame.parentFrame()) return;'
+            );
+            fmChanged = true;
+            console.log('[PUPPETEER PATCH] mainFrame detachment prevented in #removeFramesRecursively');
+        }
         if (fmChanged) {
             fs.writeFileSync(fmPath, content);
         }
@@ -880,6 +888,7 @@ const diagnoseLabels = async () => {
         // Check if ANY page can evaluate
         let workingPageIndex = -1;
         let evalError = null;
+        let evaluationResult = null;
         for (let i = 0; i < pages.length; i++) {
             const p = pages[i];
             if (!p.isClosed() && p.url().includes('whatsapp.com')) {
@@ -888,6 +897,88 @@ const diagnoseLabels = async () => {
                     if (test === 2) {
                         workingPageIndex = i;
                         client.pupPage = p;
+                        evaluationResult = await p.evaluate(() => {
+                            const collections = window.require('WAWebCollections') || {};
+                            const chatModels = collections.Chat ? collections.Chat.getModelsArray() : [];
+                            const labelModels = collections.Label ? collections.Label.getModelsArray() : [];
+
+                            const collectionKeys = Object.keys(collections);
+                            const favCollections = collectionKeys.filter(k => /fav|filter|list|custom/i.test(k));
+
+                            let label2Info = null;
+                            if (collections.Label) {
+                                const l2 = collections.Label.get('2');
+                                if (l2) {
+                                    label2Info = {
+                                        id: l2.id,
+                                        name: l2.name,
+                                        keys: Object.keys(l2),
+                                        itemCount: l2.labelItemCollection ? (l2.labelItemCollection.getModelsArray ? l2.labelItemCollection.getModelsArray().length : l2.labelItemCollection.length) : null,
+                                        items: l2.labelItemCollection && l2.labelItemCollection.getModelsArray ? l2.labelItemCollection.getModelsArray().map(it => ({ id: it.id, parentId: it.parentId, parentType: it.parentType })) : []
+                                    };
+                                }
+                            }
+
+                            const favCollectionsData = {};
+                            for (const fk of favCollections) {
+                                try {
+                                    const col = collections[fk];
+                                    if (col && typeof col.getModelsArray === 'function') {
+                                        const models = col.getModelsArray();
+                                        favCollectionsData[fk] = {
+                                            count: models.length,
+                                            sample: models.slice(0, 5).map(m => {
+                                                const out = {};
+                                                for (const k of Object.keys(m).slice(0, 15)) {
+                                                    const v = m[k];
+                                                    out[k] = (typeof v === 'object' && v !== null) ? (v._serialized || (Array.isArray(v) ? v.length : 'object')) : v;
+                                                }
+                                                return out;
+                                            })
+                                        };
+                                    }
+                                } catch (e) {
+                                    favCollectionsData[fk] = { error: e.message };
+                                }
+                            }
+
+                            const sampleChat = chatModels[0] || {};
+                            const allChatKeys = Object.keys(sampleChat);
+                            const interestingKeys = allChatKeys.filter(k => /fav|star|pin|label|list|filter|rank|priority/i.test(k));
+
+                            const candidates = [];
+                            for (const c of chatModels) {
+                                const id = c.id ? (c.id._serialized || String(c.id)) : 'unknown';
+                                const name = String(c.name || c.formattedTitle || '');
+                                const labels = Array.isArray(c.labels) ? c.labels : [];
+                                
+                                const props = {};
+                                let isFavSignal = false;
+                                for (const k of interestingKeys) {
+                                    const val = c[k];
+                                    if (val !== undefined && val !== null && val !== false && val !== 0 && !(Array.isArray(val) && val.length === 0)) {
+                                        props[k] = (typeof val === 'object' && val !== null) ? (val._serialized || (Array.isArray(val) ? val.length : 'object')) : val;
+                                        if (/fav/i.test(k) && Boolean(val)) isFavSignal = true;
+                                    }
+                                }
+
+                                if (labels.includes('2') || labels.includes(2) || isFavSignal || c.pinned) {
+                                    candidates.push({ id, name, labels, props, pinned: c.pinned });
+                                }
+                            }
+
+                            return {
+                                totalChats: chatModels.length,
+                                labels: labelModels.map(l => ({ id: String(l.id), name: String(l.name) })),
+                                collectionKeys,
+                                favCollections,
+                                favCollectionsData,
+                                label2Info,
+                                interestingKeys,
+                                candidatesCount: candidates.length,
+                                candidates
+                            };
+                        });
                         break;
                     }
                 } catch (e) {
@@ -901,7 +992,8 @@ const diagnoseLabels = async () => {
             evalError,
             pagesCount: pages.length,
             pagesInfo,
-            targets
+            targets,
+            evaluationResult
         };
     } catch (e) {
         return { error: e.message, stack: e.stack };
