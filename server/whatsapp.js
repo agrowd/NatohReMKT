@@ -871,33 +871,21 @@ const diagnoseLabels = async () => {
         return { error: 'Client not online' };
     }
     try {
-        const pages = client.pupBrowser ? await client.pupBrowser.pages() : [];
-        const pagesInfo = pages.map((p, idx) => ({
-            index: idx,
-            url: p.url(),
-            isClosed: p.isClosed(),
-            hasMainFrame: !!p.mainFrame(),
-            mainFrameDetached: p.mainFrame() ? p.mainFrame().detached : null
-        }));
-        
         const targets = client.pupBrowser ? client.pupBrowser.targets().map(t => ({
             type: t.type(),
             url: t.url()
         })) : [];
 
-        // Check if ANY page can evaluate
-        let workingPageIndex = -1;
-        let evalError = null;
-        let evaluationResult = null;
-        for (let i = 0; i < pages.length; i++) {
-            const p = pages[i];
-            if (!p.isClosed() && p.url().includes('whatsapp.com')) {
+        // Try direct CDP evaluation on the WhatsApp page target
+        let cdpResult = null;
+        let cdpError = null;
+        if (client.pupBrowser) {
+            const pageTarget = client.pupBrowser.targets().find(t => t.type() === 'page' && t.url().includes('whatsapp.com'));
+            if (pageTarget) {
                 try {
-                    const test = await p.evaluate(() => 1 + 1);
-                    if (test === 2) {
-                        workingPageIndex = i;
-                        client.pupPage = p;
-                        evaluationResult = await p.evaluate(() => {
+                    const session = await pageTarget.createCDPSession();
+                    const evalRes = await session.send('Runtime.evaluate', {
+                        expression: `(() => {
                             const collections = window.require('WAWebCollections') || {};
                             const chatModels = collections.Chat ? collections.Chat.getModelsArray() : [];
                             const labelModels = collections.Label ? collections.Label.getModelsArray() : [];
@@ -978,22 +966,21 @@ const diagnoseLabels = async () => {
                                 candidatesCount: candidates.length,
                                 candidates
                             };
-                        });
-                        break;
-                    }
-                } catch (e) {
-                    evalError = e.message;
+                        })()`,
+                        returnByValue: true,
+                        awaitPromise: true
+                    });
+                    cdpResult = evalRes.result ? evalRes.result.value : evalRes;
+                } catch (ce) {
+                    cdpError = ce.message;
                 }
             }
         }
 
         return {
-            workingPageIndex,
-            evalError,
-            pagesCount: pages.length,
-            pagesInfo,
             targets,
-            evaluationResult
+            cdpError,
+            cdpResult
         };
     } catch (e) {
         return { error: e.message, stack: e.stack };
