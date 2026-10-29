@@ -21,3 +21,8 @@
      - Condición `(pairingCode || isRequestingPairing)` para evitar que la UI salte al formulario inicial durante la generación.
      - Contenedor de dígitos con spinner animado *"GENERANDO NUEVO CÓDIGO..."* mientras se procesa la solicitud.
      - Manejo de errores visuales en rojo y botón "Cambiar número" que cancela y limpia el estado.
+- **Resultado de Verificación:**
+  - Desplegado y compilado en VPS en tiempo récord (198ms build UI).
+  - Verificado extremo a extremo con número de prueba (`5491122334455` -> código `T83J6A64`).
+  - Verificado y generado exitosamente código nuevo para el cliente (`5491159524489` -> código **`GHL7ZPHL`**).
+  - Endpoint `/api/whatsapp/status` activo en estado `'CÓDIGO GENERADO'` con `pairingCode: "GHL7ZPHL"`.
