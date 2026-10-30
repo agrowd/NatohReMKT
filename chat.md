@@ -513,3 +513,29 @@ El usuario reporta: "Selecciono la lista virtual de luz o hifu, me da como resul
 3. **Despliegue y Verificación:**
    - Desplegado en VPS (`natoh-ui` y `natoh-api`).
    - Verificado `POST /api/whatsapp/stop` en vivo: detiene y deja el backend en `'DESCONECTADO'` sin revivir.
+
+---
+
+## Sesión: Sincronización Real de Favoritos de WhatsApp (2026-10-29)
+
+### Consulta del Usuario
+"Dice que en favoritos no hay ninguno, pero si hay 2" (Adjunta captura del CRM donde en ETIQUETAS WA aparece `Favorites 0`).
+
+### Causa Raíz
+1. En WhatsApp Web moderno, la lista de **Favorites** (filtro nativo con ID `'2'`) no es una etiqueta de negocio común; sus miembros no se guardan en la colección estándar `labelItemCollection`, por lo que `label.getChats()` de `whatsapp-web.js` devolvía un array vacío `[]`.
+2. WhatsApp Web gestiona los favoritos en una colección interna dedicada: `window.require('WAWebCollections').FavoriteCollection`.
+3. Además, los contactos en dicha colección utilizan el identificador moderno `@lid` (en este caso `@federicoromero8` con LID `167954796826725@lid` y `Nextemarketing.com` con LID `98256587624560@lid`). Las funciones previas de validación (`resolveTargetChatId`) no contemplaban WIDs de tipo LID e intentaban parsearlos como números telefónicos estándar de Argentina, arriesgando fallos en el envío de campañas.
+
+### Solución Implementada
+1. **Extracción Especializada vía `FavoriteCollection` (`server/whatsapp.js`):**
+   - Se implementó `getFavoriteChatsFromWhatsApp()`, que inspecciona la colección `FavoriteCollection` y extrae los modelos de chat y contactos favoritos junto a sus números telefónicos y títulos formateados.
+   - Se integró la lógica en `syncLabelsAndMembers()`, `deepSyncLabels()` y `getContactsByLabel(labelId)` para que al procesar el filtro de Favoritos (ID `'2'` o nombre que contenga `'favorit'`), los contactos se almacenen en `contacts` y en `label_members`.
+2. **Soporte Nativo para Destinatarios `@lid` y Grupos `@g.us` (`server/whatsapp.js`):**
+   - En `normalizePhoneRecipient()`, se agregaron excepciones para no modificar strings que terminen en `@lid` o `@g.us`.
+   - En `resolveTargetChatId()`, se incorporó validación inmediata a través del DOM de WhatsApp Web (`window.WWebJS.getChat` / `WAWebWidFactory`) permitiendo enviar mensajes a contactos con LID nativo.
+3. **Sincronización Automática al Conectar:**
+   - El evento `ready` del cliente de WhatsApp Web ahora invoca `syncLabelsAndMembers()` y difunde por WebSockets el conteo real de miembros por etiqueta.
+4. **Verificación en Producción:**
+   - Desplegado en VPS (`149.50.128.73`) bajo PM2 (`natoh-api`).
+   - `GET /api/labels?sync=true` reporta `{ "id": "2", "name": "Favorites", "memberCount": 2 }`.
+   - `POST /api/campaigns/preview-audience` con `labelIds: ["2"]` reconoce exitosamente a los 2 destinatarios sin pérdida de sesión ni bloqueos.

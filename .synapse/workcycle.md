@@ -1,27 +1,33 @@
 # Workcycle Log - Sesión Actual
 
-## 📋 Tarea: Detención Forzada del Bot, Invalidación de Instancias y Feedback Inmediato
-- **Objetivo:** 
-  1. Corregir la acción "Detener" para que apague inmediatamente el motor sin dejar procesos huérfanos ni revivir automáticamente por eventos tardíos de Chromium.
-  2. Proporcionar feedback visual y notificaciones claras al usuario cuando presiona "Detener" (evitar la sensación de que "no dice nada").
-  3. Evitar la generación de códigos de vinculación fantasma o colisiones de instancias previas ("que no se generen códigos que no van y se buguee").
+## 📋 Tarea: Sincronización Real de Favoritos de WhatsApp (Contador 0 a 2)
+- **Objetivo:**
+  1. Corregir el problema por el cual en el panel lateral de etiquetas WhatsApp la lista "Favorites" mostraba contador `0` pese a que en la aplicación de WhatsApp del teléfono existían 2 contactos marcados como favoritos.
+  2. Lograr que los 2 contactos favoritos se sincronicen en SQLite (`label_members` para `label_id = '2'`), se visualicen con `Favorites: 2` en la UI y puedan ser seleccionados como destinatarios de campañas sin fallos.
 - **Diagnóstico Realizado:**
-  - Al pulsar "Detener", `handleStopBot()` ejecutaba `axios.post('/api/whatsapp/stop')`, pero la interfaz dependía únicamente del evento de Socket.io sin actualizar inmediatamente el estado local de React, dejando al usuario sin respuesta visual ("no dice nada").
-  - Si un proceso de vinculación telefónica (`requestPairingCode`) estaba esperando respuesta de WhatsApp Web (en su loop de 40s), la detención de Puppeteer no abortaba el loop, provocando que si WhatsApp Web emitía un código tardío, `client.on('code')` o `client.on('qr')` sobreescribían el estado a `'CÓDIGO GENERADO'` o `'ESPERANDO ESCANEO'`, reviviendo el bot en la UI.
-  - Al no existir un identificador único de ciclo de vida (`currentInstanceId`), eventos de instancias destruidas seguían procesándose y alterando el estado global.
+  - En WhatsApp Web moderno, "Favorites" (ID de filtro nativo `'2'`) **no es una etiqueta de negocio común**: no almacena sus miembros en `labelItemCollection` de la etiqueta. Por eso, el método estándar `label.getChats()` de `whatsapp-web.js` devolvía un array vacío `[]` (0 chats).
+  - Mediante inspección en tiempo real por CDP sobre el navegador de WhatsApp Web en el VPS, se descubrió que WhatsApp guarda los favoritos en la colección interna `WAWebCollections.FavoriteCollection`.
+  - Dicha colección contenía exactamente los 2 modelos de favoritos correspondientes a los contactos del usuario:
+    - Contacto 1: `@federicoromero8` (`167954796826725@lid`, teléfono `5491126642674@c.us`)
+    - Contacto 2: `Nextemarketing.com` (`98256587624560@lid`, teléfono `5491157351676@c.us`)
+  - Además, los contactos de WhatsApp Web moderno utilizan identificadores de usuario `@lid`. Los métodos previos `normalizePhoneRecipient` y `resolveTargetChatId` alteraban estos IDs o fallaban al buscar números en `getNumberId` porque los trataban como números estándar de Argentina en vez de identificadores nativos de chat ya existentes en el navegador.
 - **Acciones Implementadas:**
-  1. **Aislamiento por Generación e Invalidación de Instancias (`server/whatsapp.js`):**
-     - Se incorporó `currentInstanceId` e `isStoppingClient`. Cada llamada a `startClient()` crea una instancia numerada.
-     - `client.on('qr')`, `client.on('code')`, `client.on('authenticated')`, `client.on('ready')` descartan inmediatamente cualquier evento si `instanceId !== currentInstanceId`, si `isStoppingClient === true` o si `currentStatus === 'DESCONECTADO'`.
-     - `stopClient()` incrementa `currentInstanceId` para invalidar cualquier evento residual, limpia `activePairingPromise`, setea `currentStatus = 'DESCONECTADO'`, destruye Chromium limpiamente y responde con `{ success: true, status: 'DESCONECTADO' }`.
-     - El bucle de espera de código de 8 dígitos aborta al instante si el bot es detenido manualmente sin esperar los 40s.
-  2. **Feedback Reactivo y Control Visual (`client/src/App.jsx`):**
-     - Al presionar "Detener", el botón cambia a `[⏳ Deteniendo...]` deshabilitado.
-     - Al completar la petición, la UI actualiza al instante `status = 'DESCONECTADO'`, limpia `qr = null`, `pairingCode = null`, `isRequestingPairing = false`.
-     - Se muestra un banner/notificación prominente: **"⏹️ El bot fue detenido correctamente y el navegador está apagado."** (tanto en cabecera como en el modal).
-     - Se añadió botón `[⏹️ Detener]` directo en la Top Bar para control rápido sin abrir el modal.
-     - Se agregó un heartbeat de sincronización periódica que consulta `/api/whatsapp/status` cada 4s en estados transitorios para asegurar que la UI nunca se desincronice.
+  1. **Extracción Especializada vía `FavoriteCollection` (`server/whatsapp.js`):**
+     - Se creó la función `getFavoriteChatsFromWhatsApp()`, que consulta `WAWebCollections.FavoriteCollection` y cruza los modelos con `Chat` y `Contact` para extraer nombre, número de teléfono y WID.
+     - Se integró esta función dentro de `syncLabelsAndMembers()`, `getContactsByLabel(labelId)` y `deepSyncLabels()` para la etiqueta con ID `'2'` o cuyo nombre contenga `'favorit'`.
+  2. **Compatibilidad Nativa con Identificadores `@lid` y `@g.us` (`server/whatsapp.js`):**
+     - En `normalizePhoneRecipient`, se añadió una guarda para preservar intactos los identificadores `@lid` y `@g.us`.
+     - En `resolveTargetChatId`, se añadió verificación directa en WhatsApp Web (`window.WWebJS.getChat` / `WAWebWidFactory`) antes de intentar consultas telefónicas, permitiendo enviar mensajes fluidamente a contactos con identificador LID.
+  3. **Auto-Sincronización en Evento `ready` (`server/whatsapp.js`):**
+     - Al conectar el bot y entrar en estado `BOT ONLINE`, se dispara automáticamente `syncLabelsAndMembers()` y se emite la lista de etiquetas con sus contadores reales a la interfaz vía Socket.io.
 - **Resultado de Verificación:**
-  - Compilado y desplegado en VPS en 182ms.
-  - Comprobado mediante `POST /api/whatsapp/stop` en VPS: responde `{ success: true, status: 'DESCONECTADO' }` y deja el backend en `'DESCONECTADO'` de forma estable sin revivir.
-  - Interfaz web disponible en `http://149.50.128.73:8989`.
+  - Código desplegado y comprobado en el VPS de producción (`149.50.128.73`).
+  - Consulta a `/api/labels?sync=true`:
+    ```json
+    { "id": "2", "name": "Favorites", "memberCount": 2 }
+    ```
+  - Consulta a `/api/campaigns/preview-audience` con `labelIds: ["2"]`:
+    ```json
+    { "total": 2, "excluded": 0, "eligible": 2, "exclusionPeriod": "60d" }
+    ```
+  - La interfaz en `http://149.50.128.73:8989` ahora muestra **Favorites con 2 miembros** y los reconoce al seleccionarla para campañas.
