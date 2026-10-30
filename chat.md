@@ -539,3 +539,34 @@ El usuario reporta: "Selecciono la lista virtual de luz o hifu, me da como resul
    - Desplegado en VPS (`149.50.128.73`) bajo PM2 (`natoh-api`).
    - `GET /api/labels?sync=true` reporta `{ "id": "2", "name": "Favorites", "memberCount": 2 }`.
    - `POST /api/campaigns/preview-audience` con `labelIds: ["2"]` reconoce exitosamente a los 2 destinatarios sin pérdida de sesión ni bloqueos.
+
+---
+
+## Sesión: Telemetría y Feedback en Tiempo Real de Envíos de Campañas (2026-10-30)
+
+### Consulta del Usuario
+"No aparece que se estan enviando los mensajes arriba, tiene que decirme en tiempo real" (Adjunta captura en el creador de campañas con el botón `🚀 LANZAR CAMPAÑA`).
+
+### Causa Raíz
+1. Al lanzar una campaña, el backend no emitía el primer evento `campaign_progress` hasta concluir el primer contacto completo, dejando un lapso a ciegas en la interfaz.
+2. La interfaz ejecutaba un `alert()` nativo de navegador ("🚀 ¡Campaña Iniciada!...") que pausaba el hilo de ejecución de la pestaña.
+3. El usuario tenía guardado en `localStorage` un valor previo de `batchLimit: 1`. Por ello, al enviar a un contacto (`Nextemarketing.com`), el bot concluía la campaña de inmediato (`sentCount >= batchLimit`), emitía `campaign_finished` y la UI ponía `activeCampaign = null`, haciendo que la barra minúscula previa de 4px desapareciera en milisegundos sin que el usuario la viera.
+4. El indicador de cabecera era angosto y no indicaba qué contacto se estaba procesando, qué acción se realizaba ("enviando mensaje...", "pausa anti-bloqueo...", etc.) ni mantenía un resumen al terminar.
+
+### Solución Implementada
+1. **Telemetría Granular en el Backend (`server/index.js`):**
+   - Emisión inmediata de `campaign_progress` apenas se crea la campaña con `currentContact` y `currentAction: "Iniciando campaña y preparando envíos..."`.
+   - Emisión paso a paso: al verificar filtros, antes de enviar mensaje, entre pasos, durante la pausa anti-bloqueo (`leadDelay`) y al finalizar.
+   - Creación de `lastCampaignResult` con persistencia en memoria y endpoint `/api/whatsapp/status` para recuperación en recargas.
+2. **HUD y Panel Superior en Tiempo Real (`client/src/App.jsx`):**
+   - Banner superior full-width con badge `🔴 EN VIVO`, barra de progreso gruesa de 7px con gradiente neón y porcentaje en vivo.
+   - Detalle en vivo de la acción exacta que realiza el bot: destinatario actual, número, paso y conteo de pausa anti-bloqueo.
+   - Contadores claros y destacados: `⚡ Enviados: X de Total` | `⏭️ Excluidos: Y` | `⚠️ Fallidos: Z`.
+   - Botón directo de detención rápida `[⏹️ DETENER CAMPAÑA]`.
+   - Banner persistente de resumen al completar la campaña ("🎉 ¡Campaña Finalizada! Se enviaron X de Y mensajes exitosamente") con botón manual de cierre.
+   - Eliminación del `alert()` bloqueante y reemplazo por estado de carga en el botón (`[INICIANDO CAMPAÑA...]`) y toast dinámico.
+   - Detección y alerta visual en el creador si `batchLimit` está activo, con botón de 1 clic para quitar el límite y enviar a todos los destinatarios.
+3. **Verificación y Despliegue:**
+   - Compilación exitosa de Vite en 607ms.
+   - Despliegue en VPS `149.50.128.73` (`natoh-ui` y `natoh-api`).
+   - Bot online y sesión de WhatsApp Web intacta.
