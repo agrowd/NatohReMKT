@@ -20,6 +20,7 @@ app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 let activeCampaign = null;
+let lastCampaignResult = null;
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, 'uploads/'),
@@ -58,7 +59,7 @@ const { execSync } = require('child_process');
 
 // --- Bot Control ---
 app.get('/api/whatsapp/status', (req, res) => {
-    res.json({ ...getStatus(), activeCampaign, activeSearch: getActiveSearch() });
+    res.json({ ...getStatus(), activeCampaign, lastCampaignResult, activeSearch: getActiveSearch() });
 });
 app.get('/api/admin/vps-logs', (req, res) => {
     try {
@@ -923,9 +924,24 @@ app.post('/api/campaigns', async (req, res) => {
         const campaign = db.prepare('INSERT INTO campaigns (flow_id, label, total_count, config) VALUES (?, ?, ?, ?)')
             .run(flowId, campaignLabel, uniqueContacts.length, JSON.stringify(config || {}));
         const campaignId = campaign.lastInsertRowid;
-        activeCampaign = { campaignId, flowName: flow.name, sentCount: 0, total: uniqueContacts.length, status: 'running' };
+        
+        activeCampaign = { 
+            campaignId, 
+            flowName: flow.name, 
+            labelName: campaignLabel,
+            sentCount: 0, 
+            skippedCount: 0,
+            errorCount: 0,
+            total: uniqueContacts.length, 
+            status: 'running',
+            currentContact: uniqueContacts[0] ? (uniqueContacts[0].name || uniqueContacts[0].number || (uniqueContacts[0].id ? uniqueContacts[0].id._serialized : 'Destinatario 1')) : '',
+            currentAction: 'Iniciando campaña y preparando envíos...',
+            startedAt: Date.now()
+        };
+        if (io) io.emit('campaign_progress', activeCampaign);
+
         startCampaignProcess(campaignId, uniqueContacts, JSON.parse(flow.steps), config);
-        res.json({ campaignId, contactCount: uniqueContacts.length });
+        res.json({ campaignId, contactCount: uniqueContacts.length, activeCampaign });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -935,11 +951,21 @@ app.post('/api/campaigns/stop', (req, res) => {
             const campaignId = activeCampaign.campaignId;
             db.prepare("UPDATE campaigns SET status = 'cancelled' WHERE id = ?").run(campaignId);
             activeCampaign.status = 'cancelled';
+            lastCampaignResult = {
+                campaignId,
+                flowName: activeCampaign.flowName,
+                sentCount: activeCampaign.sentCount || 0,
+                skippedCount: activeCampaign.skippedCount || 0,
+                errorCount: activeCampaign.errorCount || 0,
+                total: activeCampaign.total || 0,
+                status: 'cancelled',
+                finishedAt: Date.now()
+            };
             activeCampaign = null;
+            if (io) io.emit('campaign_finished', lastCampaignResult);
         }
         db.prepare("UPDATE campaigns SET status = 'cancelled' WHERE status = 'running'").run();
 
-        if (io) io.emit('campaign_finished', { status: 'cancelled' });
         console.log('[ENGINE] Campaña detenida por solicitud del usuario.');
         res.json({ success: true, message: 'Campaña detenida con éxito.' });
     } catch (err) {
@@ -968,20 +994,36 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
     db.prepare('UPDATE campaigns SET status = ? WHERE id = ?').run('running', campaignId);
     let sentCount = 0;
     let skippedCount = 0;
+    let errorCount = 0;
+
     if (activeCampaign && activeCampaign.campaignId === campaignId) {
         activeCampaign.sentCount = 0;
         activeCampaign.skippedCount = 0;
+        activeCampaign.errorCount = 0;
+        activeCampaign.currentAction = `Preparando envíos para ${contacts.length} contactos...`;
+        if (io) io.emit('campaign_progress', activeCampaign);
     }
 
     const shouldAbort = () => {
         return !activeCampaign || activeCampaign.campaignId !== campaignId || activeCampaign.status !== 'running';
     };
 
-    for (const contact of contacts) {
+    for (let cIdx = 0; cIdx < contacts.length; cIdx++) {
+        const contact = contacts[cIdx];
         if (shouldAbort()) {
             console.log(`[ENGINE] Campaña ${campaignId} detenida porque ya no es la campaña activa.`);
             break;
         }
+
+        const contactName = contact.name || contact.number || (contact.id ? (contact.id.user || contact.id._serialized) : `Contacto ${cIdx + 1}`);
+
+        if (activeCampaign && activeCampaign.campaignId === campaignId) {
+            activeCampaign.currentContact = contactName;
+            activeCampaign.currentContactIndex = cIdx + 1;
+            activeCampaign.currentAction = `Procesando ${contactName} (${cIdx + 1} de ${contacts.length})...`;
+            if (io) io.emit('campaign_progress', activeCampaign);
+        }
+
         try {
             // Regla de Exclusión Anti-Spam (por defecto últimos 2 meses / 60 días)
             let shouldExclude = true;
@@ -1027,9 +1069,8 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
                     skippedCount++;
                     if (activeCampaign && activeCampaign.campaignId === campaignId) {
                         activeCampaign.skippedCount = skippedCount;
-                        if (skippedCount % 5 === 0 || skippedCount === 1) {
-                            io.emit('campaign_progress', activeCampaign);
-                        }
+                        activeCampaign.currentAction = `Excluido: ${contactName} ya recibió un mensaje recientemente.`;
+                        if (io) io.emit('campaign_progress', activeCampaign);
                     }
                     console.log(`[ENGINE] Saltando ${contact.id._serialized} (Ya enviado recientemente)`);
                     db.prepare('INSERT INTO logs (campaign_id, contact_id, status, message) VALUES (?, ?, ?, ?)').run(campaignId, contact.id._serialized, 'skipped', 'Excluido (Ya enviado recientemente)');
@@ -1038,18 +1079,28 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
             }
 
             // Verificar Límite de Lote (Batch Limit)
-            if (config && config.batchLimit && sentCount >= config.batchLimit) {
+            if (config && config.batchLimit && config.batchLimit > 0 && sentCount >= config.batchLimit) {
                 console.log(`[ENGINE] Límite de lote alcanzado (${config.batchLimit}). Finalizando campaña ${campaignId}.`);
+                if (activeCampaign && activeCampaign.campaignId === campaignId) {
+                    activeCampaign.currentAction = `Límite de lote alcanzado (${config.batchLimit} mensajes). Finalizando...`;
+                    if (io) io.emit('campaign_progress', activeCampaign);
+                }
                 break; 
             }
 
             let wasStepCancelled = false;
-            for (const step of steps) {
+            for (let sIdx = 0; sIdx < steps.length; sIdx++) {
+                const step = steps[sIdx];
                 if (shouldAbort()) {
                     wasStepCancelled = true;
                     break;
                 }
                 if (step.type === 'message') {
+                    if (activeCampaign && activeCampaign.campaignId === campaignId) {
+                        activeCampaign.currentAction = `Enviando mensaje (${sIdx + 1}/${steps.length}) a ${contactName}...`;
+                        if (io) io.emit('campaign_progress', activeCampaign);
+                    }
+
                     // Seleccionar una variante aleatoria si existe el array de variantes
                     let baseContent = step.content || "";
                     if (step.variants && step.variants.length > 0) {
@@ -1061,12 +1112,23 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
 
                     const resolvedContent = resolveSpintax(baseContent);
                     await sendMessage(contact.id._serialized, resolvedContent, step.mediaPath);
-                    const stepDelay = Math.floor(Math.random() * (config.maxStepDelay - config.minStepDelay + 1) + config.minStepDelay);
-                    if (await delayWithCancelCheck(stepDelay * 1000, campaignId) || shouldAbort()) {
-                        wasStepCancelled = true;
-                        break;
+
+                    if (sIdx < steps.length - 1) {
+                        const stepDelay = Math.floor(Math.random() * (config.maxStepDelay - config.minStepDelay + 1) + config.minStepDelay);
+                        if (activeCampaign && activeCampaign.campaignId === campaignId) {
+                            activeCampaign.currentAction = `Pausa entre mensajes: ${stepDelay}s...`;
+                            if (io) io.emit('campaign_progress', activeCampaign);
+                        }
+                        if (await delayWithCancelCheck(stepDelay * 1000, campaignId) || shouldAbort()) {
+                            wasStepCancelled = true;
+                            break;
+                        }
                     }
                 } else if (step.type === 'delay') {
+                    if (activeCampaign && activeCampaign.campaignId === campaignId) {
+                        activeCampaign.currentAction = `Pausa programada: ${step.duration}s...`;
+                        if (io) io.emit('campaign_progress', activeCampaign);
+                    }
                     if (await delayWithCancelCheck(step.duration * 1000, campaignId) || shouldAbort()) {
                         wasStepCancelled = true;
                         break;
@@ -1081,6 +1143,8 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
             sentCount++;
             if (activeCampaign && activeCampaign.campaignId === campaignId) {
                 activeCampaign.sentCount = sentCount;
+                activeCampaign.currentAction = `✅ Mensaje enviado a ${contactName} con éxito.`;
+                if (io) io.emit('campaign_progress', activeCampaign);
             }
             db.prepare('UPDATE campaigns SET sent_count = ? WHERE id = ?').run(sentCount, campaignId);
             db.prepare('INSERT INTO logs (campaign_id, contact_id, status) VALUES (?, ?, ?)').run(campaignId, contact.id._serialized, 'sent');
@@ -1098,19 +1162,30 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
                 }
             }
 
-            if (activeCampaign && activeCampaign.campaignId === campaignId) {
-                io.emit('campaign_progress', activeCampaign);
-            }
-            
             if (shouldAbort()) {
                 break;
             }
-            const leadDelay = Math.floor(Math.random() * (config.maxLeadDelay - config.minLeadDelay + 1) + config.minLeadDelay);
-            if (await delayWithCancelCheck(leadDelay * 1000, campaignId) || shouldAbort()) {
-                break;
+
+            // Pausa entre contactos (Lead Delay) solo si quedan más contactos y no se alcanzó el límite de lote
+            const hasMoreContacts = (cIdx + 1 < contacts.length) && (!config.batchLimit || sentCount < config.batchLimit);
+            if (hasMoreContacts) {
+                const leadDelay = Math.floor(Math.random() * (config.maxLeadDelay - config.minLeadDelay + 1) + config.minLeadDelay);
+                if (activeCampaign && activeCampaign.campaignId === campaignId) {
+                    activeCampaign.currentAction = `⏳ Pausa anti-bloqueo: esperando ${leadDelay}s antes del próximo contacto...`;
+                    if (io) io.emit('campaign_progress', activeCampaign);
+                }
+                if (await delayWithCancelCheck(leadDelay * 1000, campaignId) || shouldAbort()) {
+                    break;
+                }
             }
         } catch (err) {
             console.error(`[ENGINE] Error al procesar contacto ${contact.id._serialized}: ${err.message}`);
+            errorCount++;
+            if (activeCampaign && activeCampaign.campaignId === campaignId) {
+                activeCampaign.errorCount = errorCount;
+                activeCampaign.currentAction = `⚠️ Error en ${contactName}: ${err.message}`;
+                if (io) io.emit('campaign_progress', activeCampaign);
+            }
             db.prepare('INSERT INTO logs (campaign_id, contact_id, status, message) VALUES (?, ?, ?, ?)').run(campaignId, contact.id._serialized, 'error', err.message);
             
             // Actualizar last_sent_at para que este contacto con número inválido/fallido no quede eternamente primero en la cola
@@ -1145,8 +1220,18 @@ async function startCampaignProcess(campaignId, contacts, steps, config) {
     const finalStatus = (isStillActive && activeCampaign.status === 'running') ? 'completed' : 'cancelled';
     db.prepare('UPDATE campaigns SET status = ? WHERE id = ?').run(finalStatus, campaignId);
     if (isStillActive) {
+        lastCampaignResult = {
+            campaignId,
+            flowName: activeCampaign.flowName,
+            sentCount,
+            skippedCount,
+            errorCount,
+            total: contacts.length,
+            status: finalStatus,
+            finishedAt: Date.now()
+        };
         activeCampaign = null;
-        io.emit('campaign_finished', { campaignId, status: finalStatus, sentCount });
+        if (io) io.emit('campaign_finished', lastCampaignResult);
     }
 }
 

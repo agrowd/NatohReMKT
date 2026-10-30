@@ -97,6 +97,8 @@ function App() {
   const [campaigns, setCampaigns] = useState([]);
   const [savedFlows, setSavedFlows] = useState([]);
   const [activeCampaign, setActiveCampaign] = useState(null);
+  const [lastCampaignResult, setLastCampaignResult] = useState(null);
+  const [isLaunchingCampaign, setIsLaunchingCampaign] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [expandedCampaign, setExpandedCampaign] = useState(null);
   const [tagProgress, setTagProgress] = useState(null);
@@ -204,6 +206,7 @@ function App() {
         setConnectTab('phone');
       }
       if (res.data.activeCampaign) setActiveCampaign(res.data.activeCampaign);
+      if (res.data.lastCampaignResult && !res.data.activeCampaign) setLastCampaignResult(res.data.lastCampaignResult);
       if (res.data.activeSearch && res.data.activeSearch.status === 'running') {
         setIsSearching(true);
         setSearchWord(res.data.activeSearch.query);
@@ -239,17 +242,14 @@ function App() {
       setTimeout(() => setShowQrModal(false), 1200);
     });
     socket.on('labels', (data) => setLabels(data || []));
-    socket.on('campaign_progress', (data) => setActiveCampaign(data));
+    socket.on('campaign_progress', (data) => {
+      setActiveCampaign(data);
+      if (data) setLastCampaignResult(null);
+    });
     socket.on('campaign_finished', (data) => { 
       setActiveCampaign(null); 
-      fetchCampaigns(); 
-      if (data && data.status === 'cancelled') {
-        alert('⚠️ La campaña fue detenida o interrumpida.');
-      } else if (data && data.sentCount === 0) {
-        alert('ℹ️ Campaña Finalizada: No se enviaron mensajes nuevos porque los destinatarios ya fueron contactados en el período de exclusión anti-spam o sus números no están registrados en WhatsApp.');
-      } else {
-        alert(`🚀 ¡Campaña Finalizada! Se enviaron ${data?.sentCount !== undefined ? data.sentCount : 'los'} mensajes exitosamente.`);
-      }
+      setLastCampaignResult(data);
+      fetchCampaigns();
     });
     
     socket.on('tag_progress', (data) => {
@@ -319,11 +319,16 @@ function App() {
     };
 }, [user]);
 
-  // Sincronización periódica de respaldo cuando el modal está abierto o en transición
+  // Sincronización periódica de respaldo cuando el modal está abierto, en transición o con campaña activa
   useEffect(() => {
     if (!user) return;
     const interval = setInterval(() => {
-      if (showQrModal || status === 'INICIANDO' || status === 'GENERANDO CÓDIGO' || status === 'CONECTANDO...') {
+      const needsPoll = showQrModal || 
+                        status === 'INICIANDO' || 
+                        status === 'GENERANDO CÓDIGO' || 
+                        status === 'CONECTANDO...' || 
+                        Boolean(activeCampaign);
+      if (needsPoll) {
         axios.get(`${API_URL}/api/whatsapp/status`).then(res => {
           if (res.data) {
             if (res.data.status && res.data.status !== status) {
@@ -331,12 +336,18 @@ function App() {
             }
             if (res.data.qr !== undefined && res.data.status === 'ESPERANDO ESCANEO') setQr(res.data.qr);
             if (res.data.pairingCode !== undefined && res.data.status === 'CÓDIGO GENERADO') setPairingCode(res.data.pairingCode);
+            if (res.data.activeCampaign) {
+              setActiveCampaign(res.data.activeCampaign);
+            } else if (activeCampaign && !res.data.activeCampaign) {
+              setActiveCampaign(null);
+              if (res.data.lastCampaignResult) setLastCampaignResult(res.data.lastCampaignResult);
+            }
           }
         }).catch(() => {});
       }
-    }, 4000);
+    }, 2500);
     return () => clearInterval(interval);
-  }, [user, showQrModal, status]);
+  }, [user, showQrModal, status, activeCampaign]);
 
   const getStatusInfo = (st) => {
     switch (st) {
@@ -785,18 +796,32 @@ function App() {
   const startCampaign = async () => {
     if (status !== 'BOT ONLINE') return alert('Bot desconectado. Encendé el bot y vinculá WhatsApp primero.');
     if (selectedLabels.length === 0 && selectedVirtualLists.length === 0) return alert('Seleccioná al menos una etiqueta nativa o una lista virtual');
+    
+    setIsLaunchingCampaign(true);
+    setLastCampaignResult(null);
     try {
       const pSteps = prepareSteps(flowSteps); // Variantes directas al motor
       const flowRes = await axios.post(`${API_URL}/api/flows`, { name: `Camp. ${new Date().toLocaleTimeString()}`, steps: pSteps });
-      await axios.post(`${API_URL}/api/campaigns`, { 
+      const campRes = await axios.post(`${API_URL}/api/campaigns`, { 
         flowId: flowRes.data.id, 
         labelIds: selectedLabels, 
         virtualListIds: selectedVirtualLists, 
         config 
       });
-      setShowModal(true);
-      alert('🚀 ¡Campaña Iniciada! El bot está procesando los contactos en segundo plano.');
-    } catch (e) { alert("Error al lanzar"); }
+      if (campRes.data && campRes.data.activeCampaign) {
+        setActiveCampaign(campRes.data.activeCampaign);
+      }
+      setBotFeedback({ 
+        type: 'success', 
+        text: `🚀 ¡Campaña iniciada con éxito! Enviando a ${campRes.data?.contactCount || ''} contactos en tiempo real.` 
+      });
+      setTimeout(() => setBotFeedback(null), 6000);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (e) { 
+      alert("Error al lanzar: " + (e.response?.data?.error || e.message)); 
+    } finally {
+      setIsLaunchingCampaign(false);
+    }
   };
 
   const handleFileUpload = async (stepId, file) => {
@@ -918,29 +943,23 @@ function App() {
             )}
 
             {activeCampaign && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flex: 1, minWidth: '200px', maxWidth: '420px' }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.68rem', marginBottom: '4px' }}>
-                    <span style={{ fontWeight: 800 }}>⚡ Enviados: {activeCampaign.sentCount} / {activeCampaign.total} {activeCampaign.skippedCount > 0 ? `(${activeCampaign.skippedCount} excluidos)` : ''}</span>
-                  </div>
-                  <div style={{ height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '10px', overflow: 'hidden' }}>
-                    <div style={{ width: `${(((activeCampaign.sentCount + (activeCampaign.skippedCount || 0)) / (activeCampaign.total || 1)) * 100).toFixed(1)}%`, height: '100%', background: 'var(--primary)', boxShadow: '0 0 10px var(--primary)' }} />
-                  </div>
-                </div>
-                <button 
-                  className="btn" 
-                  style={{ background: '#ff4444', color: '#fff', fontSize: '0.68rem', padding: '3px 8px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontWeight: 800, minHeight: 'auto', height: '26px' }}
-                  onClick={async () => {
-                    if (confirm('¿Seguro que deseas detener la campaña activa? No se enviarán más mensajes.')) {
-                      try {
-                        await axios.post(`${API_URL}/api/campaigns/stop`);
-                      } catch (e) {}
-                      setActiveCampaign(null);
-                    }
-                  }}
-                >
-                  DETENER
-                </button>
+              <div 
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'rgba(0, 255, 136, 0.15)',
+                  border: '1px solid var(--primary)',
+                  color: 'var(--primary)',
+                  padding: '4px 10px',
+                  borderRadius: '20px',
+                  fontSize: '0.75rem',
+                  fontWeight: 800,
+                  boxShadow: '0 0 10px rgba(0, 255, 136, 0.3)'
+                }}
+              >
+                <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--primary)', boxShadow: '0 0 8px var(--primary)' }} />
+                <span>ENVIANDO EN TIEMPO REAL: {activeCampaign.sentCount} / {activeCampaign.total}</span>
               </div>
             )}
           </div>
@@ -963,6 +982,144 @@ function App() {
             )}
           </div>
         </header>
+
+        {/* PANEL / HUD EN TIEMPO REAL DE CAMPAÑA ACTIVA */}
+        {activeCampaign && (
+          <div 
+            style={{
+              background: 'linear-gradient(90deg, rgba(0, 25, 15, 0.98), rgba(5, 35, 20, 0.98))',
+              borderBottom: '2px solid var(--primary)',
+              padding: '12px 24px',
+              boxShadow: '0 4px 25px rgba(0, 255, 136, 0.25)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ 
+                  display: 'inline-flex', 
+                  alignItems: 'center', 
+                  gap: '6px', 
+                  background: 'rgba(0, 255, 136, 0.25)', 
+                  color: 'var(--primary)', 
+                  padding: '3px 10px', 
+                  borderRadius: '20px', 
+                  fontSize: '0.72rem', 
+                  fontWeight: 900,
+                  boxShadow: '0 0 10px rgba(0, 255, 136, 0.35)',
+                  letterSpacing: '0.5px'
+                }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--primary)', display: 'inline-block', boxShadow: '0 0 8px var(--primary)' }} />
+                  EN VIVO
+                </span>
+                <span style={{ fontWeight: 800, fontSize: '0.92rem', color: '#fff' }}>
+                  🚀 Campaña: <b style={{ color: 'var(--primary)' }}>{activeCampaign.flowName || 'Remarketing'}</b> {activeCampaign.labelName ? `(${activeCampaign.labelName})` : ''}
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#fff' }}>
+                  ⚡ Enviados: <b style={{ color: 'var(--primary)', fontSize: '1rem' }}>{activeCampaign.sentCount}</b> de <b>{activeCampaign.total}</b>
+                  {activeCampaign.total > 0 && ` (${Math.min(100, Math.round(((activeCampaign.sentCount + (activeCampaign.skippedCount || 0)) / activeCampaign.total) * 100))}%)`}
+                </span>
+                {activeCampaign.skippedCount > 0 && (
+                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#ffa726', background: 'rgba(255, 167, 38, 0.15)', border: '1px solid rgba(255, 167, 38, 0.3)', padding: '2px 8px', borderRadius: '6px' }}>
+                    ⏭️ {activeCampaign.skippedCount} excluidos
+                  </span>
+                )}
+                {activeCampaign.errorCount > 0 && (
+                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#ff5252', background: 'rgba(255, 82, 82, 0.15)', border: '1px solid rgba(255, 82, 82, 0.3)', padding: '2px 8px', borderRadius: '6px' }}>
+                    ⚠️ {activeCampaign.errorCount} fallos
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (confirm('¿Seguro que deseas detener la campaña activa? No se enviarán más mensajes.')) {
+                      try {
+                        await axios.post(`${API_URL}/api/campaigns/stop`);
+                      } catch (e) {}
+                      setActiveCampaign(null);
+                    }
+                  }}
+                  style={{
+                    background: '#ff4444',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '5px 14px',
+                    fontWeight: 900,
+                    fontSize: '0.75rem',
+                    cursor: 'pointer',
+                    boxShadow: '0 0 12px rgba(255, 68, 68, 0.45)',
+                    letterSpacing: '0.5px'
+                  }}
+                >
+                  ⏹️ DETENER CAMPAÑA
+                </button>
+              </div>
+            </div>
+
+            {/* Sub-barra de acción en tiempo real */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', color: 'rgba(255,255,255,0.9)', flexWrap: 'wrap', gap: '6px' }}>
+              <div>
+                <span style={{ opacity: 0.7 }}>Estado actual: </span>
+                <b style={{ color: '#00ffd0' }}>{activeCampaign.currentAction || 'Procesando envíos...'}</b>
+              </div>
+              {activeCampaign.currentContact && (
+                <div style={{ fontSize: '0.78rem', background: 'rgba(255,255,255,0.06)', padding: '2px 8px', borderRadius: '4px' }}>
+                  Destinatario actual: <b style={{ color: '#fff' }}>{activeCampaign.currentContact}</b>
+                </div>
+              )}
+            </div>
+
+            {/* Barra de progreso gruesa y brillante */}
+            <div style={{ height: '7px', background: 'rgba(255,255,255,0.08)', borderRadius: '10px', overflow: 'hidden' }}>
+              <div 
+                style={{ 
+                  width: `${Math.min(100, Math.max(3, (((activeCampaign.sentCount + (activeCampaign.skippedCount || 0)) / (activeCampaign.total || 1)) * 100))).toFixed(1)}%`, 
+                  height: '100%', 
+                  background: 'linear-gradient(90deg, #00ff88, #00d4ff)', 
+                  boxShadow: '0 0 12px var(--primary)',
+                  transition: 'width 0.4s ease'
+                }} 
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Resumen persistente de Última Campaña Finalizada */}
+        {lastCampaignResult && !activeCampaign && (
+          <div
+            style={{
+              background: lastCampaignResult.status === 'completed' ? 'rgba(0, 255, 136, 0.12)' : 'rgba(255, 68, 68, 0.12)',
+              borderBottom: `2px solid ${lastCampaignResult.status === 'completed' ? 'var(--primary)' : '#ff4444'}`,
+              padding: '10px 24px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              fontSize: '0.82rem'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '1.2rem' }}>{lastCampaignResult.status === 'completed' ? '🎉' : '⏹️'}</span>
+              <span>
+                <b>{lastCampaignResult.status === 'completed' ? '¡Campaña Finalizada!' : 'Campaña Detenida:'}</b> Se enviaron <b>{lastCampaignResult.sentCount}</b> de <b>{lastCampaignResult.total}</b> mensajes exitosamente
+                {lastCampaignResult.skippedCount > 0 && ` (${lastCampaignResult.skippedCount} excluidos por filtro anti-spam)`}
+                {lastCampaignResult.errorCount > 0 && ` (${lastCampaignResult.errorCount} con error)`}.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setLastCampaignResult(null)}
+              style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', opacity: 0.7, fontSize: '0.8rem', padding: '2px 8px', textDecoration: 'underline' }}
+            >
+              Cerrar
+            </button>
+          </div>
+        )}
 
         {/* Notificación reactiva de acciones del bot */}
         {botFeedback && (
@@ -1397,7 +1554,32 @@ function App() {
                       {previews[step.id] && <div style={{ marginTop: '1rem', fontSize: '0.8rem', color: 'var(--primary)', padding: '12px', background: 'rgba(0,255,136,0.05)', borderRadius: '10px', border: '1px dashed var(--primary)' }}><b>Vista Previa Aleatoria:</b> {previews[step.id]}</div>}
                     </div>
                   ))}
-                  <button className="btn btn-primary" style={{ width: '100%', height: '55px', marginTop: '1rem' }} onClick={startCampaign}>🚀 LANZAR CAMPAÑA</button>
+                  {config.batchLimit > 0 && (
+                    <div style={{ marginTop: '1rem', padding: '10px 14px', background: 'rgba(255, 170, 0, 0.1)', border: '1px solid rgba(255, 170, 0, 0.35)', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', color: '#ffb300' }}>
+                      <span>⚠️ <b>Límite de lote activo:</b> se enviarán como máximo <b>{config.batchLimit} mensajes</b>.</span>
+                      <button type="button" onClick={() => setConfig({ ...config, batchLimit: null })} style={{ background: 'rgba(255, 170, 0, 0.2)', border: 'none', color: '#fff', borderRadius: '6px', padding: '4px 10px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}>Quitar límite (Enviar a todos)</button>
+                    </div>
+                  )}
+                  <button 
+                    className="btn btn-primary" 
+                    style={{ width: '100%', height: '55px', marginTop: '1rem', fontWeight: 900, fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }} 
+                    onClick={startCampaign}
+                    disabled={isLaunchingCampaign || (activeCampaign && activeCampaign.status === 'running')}
+                  >
+                    {isLaunchingCampaign ? (
+                      <>
+                        <Icon name="refresh" size={18} className="spin-animation" color="#000" />
+                        <span>INICIANDO CAMPAÑA...</span>
+                      </>
+                    ) : activeCampaign ? (
+                      <>
+                        <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#000', display: 'inline-block' }} />
+                        <span>CAMPAÑA EN CURSO ({activeCampaign.sentCount} / {activeCampaign.total})</span>
+                      </>
+                    ) : (
+                      <span>🚀 LANZAR CAMPAÑA</span>
+                    )}
+                  </button>
                 </div>
               </main>
             </div>
